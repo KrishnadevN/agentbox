@@ -11,7 +11,33 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ## 0.2.0 — Nested projects and composable images (high)
 
-### [ ] 1. Nested project discovery
+### [ ] 1. Per-project agent sessions (privacy fix)
+
+Problem: each agent's config folder (`auth/<agent>`) is shared by all projects, and the
+working directory is `/work` everywhere. So conversation history from every project lands
+in the same place: Claude Code under `projects/-work/` (plus `history.jsonl`, todos, file
+history), Codex under `sessions/` and `history.jsonl`, Copilot and Antigravity similarly.
+Effects: `/resume` lists sessions of all projects mixed, `--continue` can pick up another
+project's conversation, and an agent in project A can read project B's transcripts.
+
+Design:
+- Keep the login shared; make session data per project. New per-agent config
+  `sessions = [...]`: paths inside the agent's config folder that are bind-mounted from
+  `~/.local/share/agentbox/sessions/<project>/<agent>/...` over the shared folder.
+  Defaults to verify against current versions (folders and files):
+  Claude `projects/`, `history.jsonl`, `todos/`, `file-history/`, `shell-snapshots/`,
+  `plans/`; Codex `sessions/`, `archived_sessions/`, `history.jsonl`; Copilot
+  `session-state/`, `history-session-state/`; Antigravity: find its session folder.
+- Create mount points with `ab_safe_mkdir`; create file targets only if missing and not
+  symlinks (same rule as the instruction files).
+- One-time migration is not needed (old mixed history stays in the shared folder); say so
+  in the CHANGELOG and suggest deleting it.
+- Afterwards `/resume` and `--continue` (item 8) only see the current project's sessions.
+
+Acceptance: check suite — a file written to the session folder in project A is not visible
+in project B's container; the login file is still shared.
+
+### [ ] 2. Nested project discovery
 
 Goal: projects may live at any depth (≤ 4) under `~/Projects`, e.g.
 `research/ProjectName/ProjectName-manuscript`. Nothing is stored separately, so nothing
@@ -42,7 +68,7 @@ Acceptance:
 - Existing flat projects keep working unchanged.
 - Check suite passes; CI runs the unit tests.
 
-### [ ] 2. Group configuration and group instructions
+### [ ] 3. Group configuration and group instructions
 
 - Merge order becomes: package defaults < `config.toml` < `hosts/<host>.toml` <
   `groups/<category>.toml` < `groups/<group>.toml` < `projects/<name>.toml` < hint < CLI.
@@ -55,7 +81,7 @@ Acceptance:
 Acceptance: example files in `examples/groups/`; README section; a cfg.py test for the
 merge order.
 
-### [ ] 3. Per-project environment and project references
+### [ ] 4. Per-project environment and project references
 
 - `[project] env = { KEY = "value" }` → `-e KEY=value` for all containers of the project.
   Reject `AGENTBOX_*`, `HOME`, `PATH` (warn and ignore); values are plain strings.
@@ -69,7 +95,7 @@ merge order.
 Acceptance: config tests; check suite case that an env var arrives and an `agents:` mount
 is read-only.
 
-### [ ] 4. Layer `include`
+### [ ] 5. Layer `include`
 
 - `images/profiles.toml` (and the user's) may set `include = ["docs", ...]` on a layer.
   The build copies the included layers' own parts (packages, files, setup, env — not their
@@ -79,7 +105,7 @@ is read-only.
 
 Acceptance: `images.py plan` test with include + cycle; build of the example succeeds.
 
-### [ ] 5. `agentbox rename <old> <new>`
+### [ ] 6. `agentbox rename <old> <new>`
 
 For renames like a placeholder → `JournalName2027`. The user renames the repo folder first;
 then this command moves `~/.agents-projects/<old>`, the bridge, `ctx/`, `home/`,
@@ -87,7 +113,7 @@ then this command moves `~/.agents-projects/<old>`, the bridge, `ctx/`, `home/`,
 trusted repo's `agent` remote. Refuses while the pod runs. Host-side moves of
 agent-writable folders: rename the top folder only (no traversal inside).
 
-### [ ] 6. Release 0.2.0
+### [ ] 7. Release 0.2.0
 
 README (layout, groups, env, include, rename), CHANGELOG, examples; beta tag, test on the
 laptop, then `v0.2.0`.
@@ -96,12 +122,12 @@ laptop, then `v0.2.0`.
 
 ## 0.3.0 — Agent workflow (medium)
 
-### [ ] 7. Pass arguments to the agent
+### [ ] 8. Pass arguments to the agent
 
 `agentbox <p> claude -- --continue` → everything after `--` is appended to the agent
 command. Same for `codex`, `agy`, `copilot`.
 
-### [ ] 8. Handoff folder and review-workflow instructions
+### [ ] 9. Handoff folder and review-workflow instructions
 
 - Create `/work/.agentbox/handoff/` (inside the private project folder); mention it in the
   context template.
@@ -118,7 +144,7 @@ command. Same for `codex`, `agy`, `copilot`.
   - commit trailers in one final paragraph: `Implemented-by:`, `Reviewed-by:`,
     `Co-authored-by:`; agents report their own current model name.
 
-### [ ] 9. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
+### [ ] 10. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
 
 - New config per agent: `headless` and `headless_resume` command lists.
   Defaults to verify: Claude `claude -p --dangerously-skip-permissions` (+ `--continue`);
@@ -127,18 +153,18 @@ command. Same for `codex`, `agy`, `copilot`.
 - Runs in the agent's own container (`podman exec` without TTY), output also appended to
   `/work/.agentbox/handoff/run-<agent>.log`.
 
-### [ ] 10. `agentbox <p> review [branch]`
+### [ ] 11. `agentbox <p> review [branch]`
 
 Fetch, then in the trusted repo: commit list and `diff --stat` of `agent/<branch>` against
 the default branch (detect `main`/`master`). Read-only; merging stays manual.
 
-### [ ] 11. Notifications
+### [ ] 12. Notifications
 
 Defaults written by prep into the sandbox login folders (only if not set): Claude terminal
 bell, Codex terminal notifications (verify setting names). README: kitty shows them; in
 tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets.
 
-### [ ] 12. `agentbox doctor` and `agentbox clean <p>`
+### [ ] 13. `agentbox doctor` and `agentbox clean <p>`
 
 - `doctor`: versions (agentbox, podman, runsc, CLIs), paths agentbox writes outside the
   package with sizes, stale slices/pods/state for projects that no longer exist, Podman
@@ -147,19 +173,19 @@ tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets
   `home/`, slice file (asks first; never touches `~/Projects`, never touches
   `~/.agents-context` without `--context`).
 
-### [ ] 13. Image name prefix for development
+### [ ] 14. Image name prefix for development
 
 `AB_IMAGE_PREFIX` (default `sbx`) used by `images.py`, `cfg.py`, `agentbox-update-tools`, so
 a development checkout can build and test `localhost/sbxdev-*` without replacing the images
 real projects use.
 
-### [ ] 14. Release 0.3.0
+### [ ] 15. Release 0.3.0
 
 ---
 
 ## 0.4.0 — Workstation and tmux (low)
 
-### [ ] 15. Fedora Atomic (Kinoite/Silverblue) support in prep
+### [ ] 16. Fedora Atomic (Kinoite/Silverblue) support in prep
 
 - Detect rpm-ostree; Podman is preinstalled; install missing pieces by layering only if
   needed; gVisor tarball into `/usr/local/bin` (writable on ostree).
@@ -167,32 +193,32 @@ real projects use.
   Verify how runsc handles labels; `setsebool -P container_use_devices=true` for GPU.
 - Check suite must pass on Kinoite.
 
-### [ ] 16. NVIDIA GPU tier
+### [ ] 17. NVIDIA GPU tier
 
 Host `gpu = "nvidia-cdi"`; project `gpu = "optional" | "required"`. With a GPU: `crun` +
 `--device nvidia.com/gpu=all` for the containers that need it (runsc + nvproxy stays an
 experiment). Optional `cuda` layer for `nvcc`. Check: `nvidia-smi` and
 `torch.cuda.is_available()` in the container; CPU fallback on hosts without GPU.
 
-### [ ] 17. tmux layout
+### [ ] 18. tmux layout
 
 `agentbox <p>` (no action) opens or re-attaches tmux session `ab-<p>`: window `host`
 (trusted repo folder, plain host shell), one window per agent, `dev`. `monitor-activity`
 on agent windows. Scripts never `send-keys` agent-written content.
 
-### [ ] 18. Release 0.4.0
+### [ ] 19. Release 0.4.0
 
 ---
 
 ## Later (lower)
 
-### [ ] 19. `agentbox <p> loop` — automated implement/review rounds
+### [ ] 20. `agentbox <p> loop` — automated implement/review rounds
 
-Host-side, after the protocol of item 8 has worked manually for a while. Reads `STATUS.md`
+Host-side, after the protocol of item 9 has worked manually for a while. Reads `STATUS.md`
 strictly (allowed values only, size cap), sends only fixed prompts via `run --resume`,
 stops at `approved-by-agents`, `needs-human` or the round limit.
 
-### [ ] 20. Per-agent worktrees (opt-in)
+### [ ] 21. Per-agent worktrees (opt-in)
 
 `worktrees = true`: each agent container gets its own git worktree/branch of the agent
 copy, created inside the sandbox so paths match. Only if parallel agents become common.
@@ -201,12 +227,12 @@ copy, created inside the sandbox so paths match. Only if parallel agents become 
 
 ## Even later
 
-### [ ] 21. Network allowlist and logging (opt-in)
+### [ ] 22. Network allowlist and logging (opt-in)
 
 A small egress proxy per pod: deny by default with a per-project domain list, and a log
 of allowed destinations. Breaks free web search unless domains are allowed.
 
-### [ ] 22. Nested containers (experiment, gVisor only)
+### [ ] 23. Nested containers (experiment, gVisor only)
 
 A layer with podman/buildah/fuse-overlayfs; capabilities only for that project's runsc
 containers (inside gVisor they apply to the user-space kernel, not the host); image storage

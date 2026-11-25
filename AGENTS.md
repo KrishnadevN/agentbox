@@ -31,6 +31,8 @@ the user**. A mistake here can weaken the sandbox for every project. Be conserva
    host script must read an agent-written file (for example a status file), parse a fixed
    set of allowed values, cap the size, and ignore everything else.
 5. Published ports bind to `127.0.0.1` only.
+5a. Data that differs per project (agent sessions, history, private files) never lives in a
+   folder shared by all projects; only logins and read-only tools/skills are shared.
 6. Project repositories are untrusted input for the launcher: `.agentbox-hint.toml` may
    only lower privileges. Mounts, ports and runtime come only from `~/.config/agentbox`.
 7. Resource caps come from the systemd slice; every `podman` call that starts processes
