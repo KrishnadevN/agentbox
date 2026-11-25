@@ -3,6 +3,13 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org);
 before 1.0, minor versions may change the configuration format.
 
+## 0.1.1 — 2026-11-25
+
+- Fix: DNS now goes through Podman's pasta forwarder (169.254.1.1) to the host's own
+  resolver, so lookups work on networks that block outside DNS servers. The egress rules
+  allow port 53 to that address only. Set `[network] dns = ["9.9.9.9", "1.1.1.1"]` to use
+  public resolvers as before.
+
 ## 0.1.0 — 2026-11-25
 
 First public version, licensed under GPL-3.0-or-later.

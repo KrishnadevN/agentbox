@@ -85,7 +85,10 @@ Inside the sandbox:
 - **Files.** Only the project copy, the folders you list as read-only, the agents' own
   login folder, and shared package caches. No home folder, no SSH keys, no keyring.
 - **Network.** The public internet works. Your LAN, your Tailscale tailnet, services on
-  your machine's localhost, link-local addresses and outgoing SSH are blocked.
+  your machine's localhost, link-local addresses and outgoing SSH are blocked. Name
+  lookups go through your host's own resolver (via Podman's DNS forwarder), so DNS works
+  on networks that block outside DNS servers; agents can look up internal names, but not
+  connect to them.
 - **Git.** Agents commit as you (your global git name and email), but they have no
   credentials, so they cannot push. You review and push from your own repository.
 - **Resources.** All agents together get your RAM and CPUs minus a reserve that you set,
@@ -380,6 +383,7 @@ own image layers and per-project settings, and a code base small enough to read.
 | New files in `/work` belong to a number instead of you | don't add `--user` or `--userns`: agents must run as container root, which is you |
 | The dev server doesn't reload | set `dev_runtime = "crun"` in the project file: separate gVisor sandboxes don't share file events |
 | Chromium or Playwright fails | run it in the dev container with `dev_runtime = "crun"` |
+| Name lookups hang in the sandbox, logins fail with "error sending request" | DNS: keep the default `dns = ["169.254.1.1"]` (Podman's forwarder to your host's resolver); public resolvers are often blocked on institutional networks |
 | A website fails in the check | if it also fails from your machine, it's your network, not the sandbox |
 
 ## Repository layout

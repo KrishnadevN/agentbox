@@ -163,7 +163,10 @@ for url in https://pypi.org/simple/ https://registry.npmjs.org/ https://api.anth
     fail "$url works from host but NOT from sandbox"
   fi
 done
-expect "DNS uses public resolvers" cx dev "grep -q '9.9.9.9' /etc/resolv.conf"
+expect "DNS lookups work (getent hosts pypi.org)" cx dev "timeout 10 getent hosts pypi.org"
+if grep -q '169.254.1.1' <<<"$(cx dev 'cat /etc/resolv.conf')"; then
+  expect_not "only DNS reaches the forwarder (169.254.1.1:80 blocked)" cx dev "curl -fs -m 3 http://169.254.1.1/"
+fi
 expect "public git fetch allowed" cx dev "git ls-remote https://github.com/git/git HEAD"
 expect "port 443 to github.com open (control)" cx dev "nc -z -w 5 github.com 443"
 expect_not "SSH (port 22) to github.com blocked" cx dev "nc -z -w 5 github.com 22"

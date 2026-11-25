@@ -18,7 +18,12 @@ runsc_flags = ["ignore-cgroups", "network=host"]   # both REQUIRED for rootless 
 
 [network]
 mode = "open"                # open | offline
-dns  = ["9.9.9.9", "1.1.1.1"]
+# 169.254.1.1 is Podman's pasta DNS forwarder: it passes lookups to the host's own
+# resolver, so DNS works on networks that block outside DNS (universities, companies,
+# VPNs). The egress rules allow port 53 to this one address only. Agents can then look
+# up internal names, but still cannot connect to internal addresses.
+# Public resolvers instead: dns = ["9.9.9.9", "1.1.1.1"]
+dns  = ["169.254.1.1"]
 
 [context]
 # Your agent context lives in ~/.agents-context (its own private git repo if you like):
