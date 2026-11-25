@@ -1,0 +1,13 @@
+# ~/.config/agentbox/config.toml — YOUR overrides of the package defaults.toml.
+# Same sections and keys as defaults.toml; keep only what you change.
+# Order: package defaults.toml < this file < hosts/<hostname>.toml
+#        < projects/<project>.toml < CLI options.
+
+# [project]
+# agents = ["claude", "codex"]          # your default agent set
+
+# [agents.agy]
+# cmd = ["agy", "--yolo"]               # after checking `agy --help`
+
+# [resources]
+# reserve_threads = 6

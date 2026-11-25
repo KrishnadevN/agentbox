@@ -1,0 +1,26 @@
+name: lint
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck zsh fish nftables
+      - name: shellcheck
+        run: shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash
+      - name: Python
+        run: python3 -m py_compile lib/*.py
+      - name: zsh and fish syntax
+        run: zsh -n shell/agentbox.zsh && fish -n shell/agentbox.fish
+      - name: TOML files parse
+        run: |
+          python3 - <<'PY'
+          import glob, tomllib
+          for f in ["defaults.toml", "images/profiles.toml", *glob.glob("examples/**/*.toml", recursive=True)]:
+              tomllib.load(open(f, "rb")); print("ok", f)
+          PY
+      - name: nftables rules load
+        run: sudo unshare -n nft -c -f net/egress.nft

@@ -1,0 +1,4 @@
+# Copy to ~/.config/agentbox/projects/<dir-name-in-~/Projects>.toml
+[project]
+profile = "docs"             # Typst + Pandoc in image; TeX Live mounted from host (tex_root)
+agents  = ["claude", "codex"]

@@ -1,0 +1,4 @@
+# Personal config never lives in the package: it is in ~/.config/agentbox
+/hosts/
+/projects/
+__pycache__/

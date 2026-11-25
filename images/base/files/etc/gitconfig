@@ -1,0 +1,13 @@
+[safe]
+	directory = *
+[init]
+	defaultBranch = main
+[push]
+	default = current
+# Convenience only: makes `git push` fail fast. The real control is
+# "no credentials in the sandbox" + "TCP 22 blocked" + read-only /upstream.
+[url "invalid://push-disabled-in-agentbox/"]
+	pushInsteadOf = https://
+	pushInsteadOf = http://
+	pushInsteadOf = ssh://
+	pushInsteadOf = git@

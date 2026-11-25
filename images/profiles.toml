@@ -1,0 +1,26 @@
+# Image layers ("profiles"). Each layer is a folder next to this file:
+#   <name>/packages.txt  apt packages, one or more per line, # comments allowed
+#   <name>/files/        copied into the image root (e.g. files/etc/foo -> /etc/foo)
+#   <name>/setup.sh      bash script run as root after packages and files
+#   <name>/env.txt       KEY=VALUE lines -> image environment
+# All parts are optional. Order inside a layer: packages, files, setup.sh, env.
+#
+# Your own layers and additions live in ~/.config/agentbox/images/ with the same
+# layout. A folder with the same name as a package layer ADDS to it (extra packages,
+# files, a second setup.sh, more env). New layers need an entry in
+# ~/.config/agentbox/images/profiles.toml, e.g.:
+#   [julia]
+#   parent = "python"
+# Each layer becomes the image localhost/sbx-<name>:latest; use it as `profile`.
+
+[base]
+from = "docker.io/library/ubuntu:24.04"   # pin: docker.io/library/ubuntu:24.04@sha256:<digest>
+
+[python]
+parent = "base"
+
+[web]
+parent = "python"
+
+[docs]
+parent = "python"

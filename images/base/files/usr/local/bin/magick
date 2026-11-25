@@ -1,0 +1,9 @@
+#!/bin/sh
+# ImageMagick 7 style "magick" command on top of Ubuntu's ImageMagick 6.
+# "magick in.png out.jpg" -> convert ; "magick identify x.png" -> identify ...
+case "${1:-}" in
+  identify|mogrify|montage|compare|composite|conjure|stream|import|display|animate)
+    t=$1; shift; exec "$t" "$@" ;;
+  convert) shift ;;
+esac
+exec convert "$@"

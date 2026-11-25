@@ -1,0 +1,5 @@
+# Copy to ~/.config/agentbox/projects/<dir-name-in-~/Projects>.toml
+[project]
+profile = "python"
+data_ro = []                 # e.g. ["~/Data/benchmarks"]
+# mem = "48G"                # cap this project below the global cap

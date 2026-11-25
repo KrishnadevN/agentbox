@@ -1,0 +1,11 @@
+# ~/.config/agentbox/hosts/<hostname>.toml — created by agentbox-prep.sh.
+# Only facts and overrides for THIS machine. RAM and CPU threads are read live.
+[host]
+label    = "laptop"          # shown to agents: laptop | workstation
+gpu      = "none"            # none | nvidia-cdi (workstation, later)
+linger   = false             # true only for machines you use over SSH
+tex_root = ""                # e.g. "/usr/local/texlive/2026" (scripts/agentbox-install-texlive.sh)
+
+# Optional overrides of defaults.toml, e.g.:
+# [resources]
+# reserve_threads = 6

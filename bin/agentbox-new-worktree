@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# agentbox-new-worktree <project>
+# Creates, from YOUR repo ~/Projects/<p> (committed state only):
+#   ~/.local/share/agentbox/bridge/<p>.git   bare repo, host-owned, read-only for agents (/upstream)
+#   ~/.agents-projects/<p>                    the agents' working copy (/work)
+# and adds the remote "agent" to your repo, so `git fetch agent` brings their commits.
+set -euo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+p=${1:?usage: agentbox-new-worktree <project>}
+S=$AB_PROJECTS/$p; W=$AB_AGENTS/$p; BR=$AB_STATE/bridge/$p.git
+git -C "$S" rev-parse --verify -q HEAD >/dev/null || ab_die "$S is not a git repo with at least one commit"
+[[ -e $W ]] && ab_die "$W already exists"
+mkdir -p "$AB_AGENTS" "$AB_STATE/bridge"
+if [[ ! -d $BR ]]; then
+  git clone -q --bare --no-hardlinks "$S" "$BR"
+  git -C "$BR" remote remove origin 2>/dev/null || true
+fi
+git clone -q --no-hardlinks "$BR" "$W"
+# Safe: fresh copy, no agent has touched it yet. After this, never run host git inside $W.
+git -C "$W" remote rename origin upstream
+git -C "$W" remote set-url upstream /upstream
+if git -C "$S" remote get-url agent >/dev/null 2>&1; then
+  git -C "$S" remote set-url agent "$W"
+else
+  git -C "$S" remote add agent "$W"
+fi
+ab_ok "created $W (agents) and $BR (read-only bridge); remote 'agent' added to $S"

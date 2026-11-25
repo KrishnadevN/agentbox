@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# agentbox-up <project> [--runtime runsc|crun] [--mem 32G] [--cpus N] [--ro PATH]... [--offline]
+# Starts (or reuses) the pod for ~/.agents-projects/<project>:
+#   one container per agent (own credentials) + one "dev" container (no credentials).
+set -euo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+ab_require_cmds podman python3 systemd-run nft git
+[[ $# -ge 1 && $1 != -* ]] || ab_die "usage: agentbox-up <project> [options]"
+p=$1; shift
+cfgout=$(python3 "$AB_LIB/cfg.py" "$p" "$@") || exit 1
+eval "$cfgout"
+
+[[ -d $WORK ]]   || ab_die "$WORK missing: run 'agentbox-new-worktree $P' first"
+[[ -d $BRIDGE ]] || ab_die "$BRIDGE missing: run 'agentbox-new-worktree $P' first"
+podman image exists "$IMAGE" || ab_die "image $IMAGE missing: run agentbox-build"
+[[ -x $AB_STATE/tools/bin/claude || -x $AB_STATE/tools/npm/bin/codex ]] \
+  || ab_die "agent CLIs missing: run agentbox-update-tools"
+
+# ---- 1. resource caps (systemd user slices) --------------------------------
+U=$HOME/.config/systemd/user; mkdir -p "$U"
+oomd=""; systemctl is-active -q systemd-oomd 2>/dev/null && oomd="ManagedOOMMemoryPressure=kill"
+write_unit() {  # only reload systemd when content changes
+  if ! cmp -s <(printf '%s\n' "$2") "$U/$1" 2>/dev/null; then
+    printf '%s\n' "$2" > "$U/$1"; RELOAD=1
+  fi
+}
+RELOAD=0
+write_unit agents.slice "[Unit]
+Description=agentbox: all agent sandboxes (host reserve kept free)
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=$MEMHIGH
+MemoryMax=$MEMMAX
+MemorySwapMax=0
+CPUQuota=$((CPUS * 100))%
+CPUWeight=50
+IOWeight=50
+TasksMax=$TASKS
+$oomd"
+plim=""
+[[ -n $PMEM ]]  && plim+=$'\n'"MemoryHigh=$PMEMHIGH"$'\n'"MemoryMax=$PMEM"$'\n'"MemorySwapMax=0"
+[[ -n $PCPUS ]] && plim+=$'\n'"CPUQuota=$((PCPUS * 100))%"
+write_unit "$SLICE" "[Unit]
+Description=agentbox project $P
+[Slice]
+CPUWeight=100$plim"
+((RELOAD)) && systemctl --user daemon-reload
+
+hname=$(git config --global --get user.name 2>/dev/null || true)
+hemail=$(git config --global --get user.email 2>/dev/null || true)
+[[ -n $hname && -n $hemail ]] || ab_warn "no global git user.name/user.email on the host: agents must set an identity per commit"
+
+# ---- 2. pod (reuse if running with the same config) ------------------------
+if podman pod exists "$POD"; then
+  state=$(podman pod inspect -f '{{.State}}' "$POD")
+  old=$(podman pod inspect -f '{{index .Labels "agentbox.cfg"}}' "$POD" 2>/dev/null || true)
+  if [[ $state == Running ]]; then
+    [[ $old == "$CFGHASH" ]] || ab_warn "config changed since start: run 'agentbox $P restart' to apply"
+  else
+    podman pod rm -f "$POD" >/dev/null       # stopped pods are recreated (fresh nft + flags)
+  fi
+fi
+
+C=$AB_STATE/ctx/$P; mkdir -p "$C" "$AB_STATE/logs"
+ab_safe_mkdir "$WORK" logs || exit 1
+CTXP=$AB_CONTEXT/projects/$P
+if ((CTX_FILES)); then
+  mkdir -p "$AB_CONTEXT/projects"; ab_safe_mkdir "$AB_CONTEXT/projects" "$P" || exit 1
+  ab_safe_mkdir "$WORK" .agentbox || exit 1
+fi
+if ! podman pod exists "$POD"; then
+  ab_step "creating pod $POD (runtime $RT, profile $PROFILE, net $NET)"
+  # audit log: what ran, with which versions
+  {
+    echo "$(date -Is) up $P host=$HOST_LABEL rt=$RT dev_rt=$DEVRT net=$NET image=$IMAGE cfg=$CFGHASH"
+    echo "  digest=$(podman image inspect -f '{{.Digest}}' "$IMAGE") agentbox=$(git -C "$AB_ROOT" rev-parse --short HEAD 2>/dev/null || echo none)"
+    echo "  $(runsc --version 2>/dev/null | head -1) | $(podman --version)"
+    sed 's/^/  /' "$AB_STATE/tools/VERSIONS" 2>/dev/null || true
+  } >> "$AB_STATE/logs/launch.log"
+
+  # context files (what the agents are told)
+  if [[ $NET == offline ]]; then netmsg="offline (no network)."
+  else netmsg="public internet works. LAN, host services, tailnet and SSH (port 22) are blocked."; fi
+  plimtxt=""; [[ -n $PMEM$PCPUS ]] && plimtxt=" This project alone: ${PMEM:-no extra RAM cap}, ${PCPUS:-no extra} CPU threads."
+  for ag in "${AGENTS[@]}" dev; do
+    agrt=$RT; [[ $ag == dev ]] && agrt=$DEVRT
+    hid="${hname:-not set} <${hemail:-not set}>"; aid=$hid
+    if [[ $ag != dev ]]; then vn="GITNAME_$ag"; ve="GITEMAIL_$ag"; aid="${!vn} <${!ve}>"; fi
+    H=$HOST_LABEL A=$ag PRJ=$P R=$agrt M=$MEMMAX CP=$CPUS J=$JOBT G=$GPU N=$netmsg PL=$plimtxt \
+    HG=$hid AG=$aid PF=$CTX_FILES SK=$SKILLS_MODE \
+    python3 - "$AB_ROOT/templates/context.md" "$C/$ag.md" <<'PY'
+import os, sys
+t = open(sys.argv[1]).read()
+e = os.environ
+for k, v in dict(HOST=e["H"], AGENT=e["A"], PROJECT=e["PRJ"], MEM=e["M"], CPUS=e["CP"],
+                 JOBT=e["J"], GPU=e["G"], NETWORK=e["N"], PLIMITS=e["PL"],
+                 HOSTGIT=e["HG"], AGENTGIT=e["AG"],
+                 PRIVATE=("- Private project files: /work/.agentbox/ (not part of the repository, writable,\n"
+                          "  kept by the human in a separate private repository). Its entries are linked\n"
+                          "  into /work when the repository has nothing with that name; never commit those\n"
+                          "  links. Use it for notes and instructions that must not be published.\n") if e["PF"] == "1" else "",
+                 SKILLS={"ro": "- Shared skills are read-only. Suggest changes to the human instead.\n",
+                         "rw": "- Shared skills are writable and used by agents in ALL projects: change them only when asked.\n",
+                         "off": ""}[e["SK"]],
+                 RUNTIME="gVisor" if e["R"] == "runsc" else "container, shared kernel").items():
+    t = t.replace("{{" + k + "}}", v)
+open(sys.argv[2], "w").write(t)
+PY
+    # Your own instructions from ~/.agents-context, appended (both optional).
+    for extra in "$AB_CONTEXT/instructions/all.md" "$AB_CONTEXT/instructions/$ag.md"; do
+      [[ -f $extra ]] && { printf '\n'; cat "$extra"; } >> "$C/$ag.md"
+    done
+  done
+
+  netargs=(--network pasta); [[ $NET == offline ]] && netargs=(--network none)
+  podargs=(); for d in "${DNS[@]}";     do podargs+=(--dns "$d"); done
+              for x in "${PUBLISH[@]}"; do podargs+=(-p "$x"); done
+  # Pod-level limits cap crun containers (their cgroups live in the pod).
+  # runsc ignores them; runsc is capped by the slice via ab_scoped instead.
+  # No --cgroup-parent: podman 6 fails to start pods with a custom parent slice.
+  # --share net: share ONLY the network namespace (egress rules, pod localhost).
+  # gVisor cannot join another container's UTS/IPC namespaces.
+  # No --userns=keep-id: gVisor cannot join a user namespace made by the infra
+  # container. Default rootless mapping: root in the container = YOU on the host
+  # (no capabilities), so files in /work stay owned by you.
+  pmem=${PMEM:-$MEMMAX} pcpu=${PCPUS:-$CPUS}
+  podman pod create --name "$POD" --label "agentbox.cfg=$CFGHASH" \
+    --share net \
+    --memory "$pmem" --memory-swap "$pmem" --cpus "$pcpu" \
+    "${netargs[@]}" "${podargs[@]}" >/dev/null
+  ab_scoped "$SLICE" "ab-$NORM-infra" podman pod start "$POD" >/dev/null
+
+  if [[ $NET != offline ]]; then
+    ns=$(ab_pod_netns "$POD")
+    [[ -n $ns ]] || ab_die "could not find the pod network namespace"
+    podman unshare nsenter --net="$ns" nft -f "$AB_ROOT/net/egress.nft" \
+      || { podman pod rm -f "$POD" >/dev/null; ab_die "egress rules failed: pod removed for safety"; }
+  fi
+fi
+
+# ---- 3. git identity (generated global git config per container) ----------
+# Only your host identity as user.name/user.email, like a commit made on the host.
+# agentbox never edits commits; conventions (trailers, --author) belong in the
+# project's AGENTS.md / CLAUDE.md. Read-only, so agents cannot change it globally;
+# `git commit --author=...` and `git -c user.name=...` still work.
+write_gitconfig() {  # write_gitconfig <container>
+  local n=$1 out=$C/$1.gitconfig f
+  f=$(mktemp "$C/.gitconfig.XXXXXX")   # build aside, then copy in place: keeps the
+                                       # inode, so running containers see the update
+  [[ -n $hname ]]  && git config -f "$f" user.name "$hname"
+  [[ -n $hemail ]] && git config -f "$f" user.email "$hemail"
+  cat "$f" > "$out"; rm -f "$f"
+}
+for n in "${AGENTS[@]}" dev; do write_gitconfig "$n"; done
+
+# ---- 4. containers ---------------------------------------------------------
+tz=$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)
+path=/opt/agentbox/tools/bin:/opt/agentbox/tools/npm/bin:/usr/local/bin:/usr/bin:/bin
+[[ -n $TEX_ROOT ]] && path=$TEX_ROOT/bin/x86_64-linux:$path
+mkdir -p "$AB_STATE"/cache/{uv,pnpm,npm}
+
+# Host folder that backs a path in the agent's home (login folders are separate mounts).
+host_dir_for() {  # host_dir_for <agent> <container-path>  -> "BASE<TAB>REL"
+  local ag=$1 p=${2#/home/agent/} base=$AB_STATE/home/$P/$1
+  case $p in
+    .claude/*)  [[ $ag == claude ]]  && { base=$AB_STATE/auth/claude;  p=${p#.claude/}; } ;;
+    .codex/*)   [[ $ag == codex ]]   && { base=$AB_STATE/auth/codex;   p=${p#.codex/}; } ;;
+    .gemini/*)  [[ $ag == agy ]]     && { base=$AB_STATE/auth/agy;     p=${p#.gemini/}; } ;;
+    .copilot/*) [[ $ag == copilot ]] && { base=$AB_STATE/auth/copilot; p=${p#.copilot/}; } ;;
+  esac
+  printf '%s\t%s\n' "$base" "$p"
+}
+context_mounts() {  # context_mounts <name>  -> fills CTXM array
+  local n=$1 d base rel; CTXM=()
+  ((CTX_FILES)) && CTXM+=(-v "$CTXP:/work/.agentbox:rw")
+  [[ $n == dev || $SKILLS_MODE == off || ! -d $AB_CONTEXT/skills ]] && return 0
+  local -n sk="SKILLS_$n"
+  for d in "${sk[@]}"; do
+    IFS=$'\t' read -r base rel < <(host_dir_for "$n" "$d")
+    mkdir -p "$base"; ab_safe_mkdir "$base" "$rel" || exit 1
+    CTXM+=(-v "$AB_CONTEXT/skills:$d:$SKILLS_MODE")
+  done
+}
+
+start_ctr() {  # start_ctr <name> <runtime> [extra podman args...]
+  local n=$1 rt=$2; shift 2
+  local name=$POD-$n H=$AB_STATE/home/$P/$n
+  if podman container exists "$name"; then
+    [[ $(podman inspect -f '{{.State.Running}}' "$name") == true ]] && return 0
+    podman rm -f "$name" >/dev/null          # rootfs is read-only: nothing is lost
+  fi
+  mkdir -p "$H"; ab_safe_mkdir "$H" .cache/uv .local/share/pnpm .npm || exit 1
+  local rtargs=(--runtime "$rt")
+  if [[ $rt == runsc ]]; then
+    for f in "${RTFLAGS[@]}"; do rtargs+=(--runtime-flag "$f"); done
+    rtargs+=(--cgroups=no-conmon)            # keep conmon (and runsc) in our scope
+  fi
+  context_mounts "$n"
+  local args=(
+    --pod "$POD" --name "$name" --hostname "$n" --shm-size=8g
+    --cap-drop=all --security-opt=no-new-privileges
+    --read-only --read-only-tmpfs
+    -v "$WORK:/work:rw" -w /work
+    -v "$BRIDGE:/upstream:ro"
+    -v "$AB_STATE/tools:/opt/agentbox/tools:ro"
+    -v "$C/$n.md:/etc/agentbox/context.md:ro"
+    -v "$H:/home/agent:rw"
+    -v "$AB_STATE/cache/uv:/home/agent/.cache/uv:rw"
+    -v "$AB_STATE/cache/pnpm:/home/agent/.local/share/pnpm:rw"
+    -v "$AB_STATE/cache/npm:/home/agent/.npm:rw"
+    "${XMOUNTS[@]}" "${CTXM[@]}"
+    -e HOME=/home/agent -e PATH="$path" -e TZ="$tz"
+    -e AGENTBOX=1 -e AGENTBOX_HOST="$HOST_LABEL" -e AGENTBOX_PROJECT="$P"
+    -e AGENTBOX_AGENT="$n" -e AGENTBOX_RUNTIME="$rt" -e AGENTBOX_GPU="$GPU"
+    -e AGENTBOX_CPUS="${PCPUS:-$CPUS}" -e AGENTBOX_MEM="${PMEM:-$MEMMAX}"
+    -e OMP_NUM_THREADS="$JOBT" -e OPENBLAS_NUM_THREADS="$JOBT" -e MKL_NUM_THREADS="$JOBT"
+    -e NUMEXPR_MAX_THREADS="$JOBT" -e NUMBA_NUM_THREADS="$JOBT" -e RAYON_NUM_THREADS="$JOBT"
+    -e MAKEFLAGS="-j$JOBT" -e NPM_CONFIG_UPDATE_NOTIFIER=false
+    -v "$C/$n.gitconfig:/etc/agentbox/gitconfig:ro" -e GIT_CONFIG_GLOBAL=/etc/agentbox/gitconfig
+    "$@" "$IMAGE")
+  ab_step "starting $name ($rt)"
+  local err
+  if ! err=$(ab_scoped "$SLICE" "ab-$NORM-$n" podman run -d "${rtargs[@]}" "${args[@]}" 2>&1 >/dev/null); then
+    podman rm -f "$name" >/dev/null 2>&1 || true
+    if [[ $rt == runsc && $err == *cgroup* ]]; then
+      ab_warn "$name: cgroup error with --cgroups=no-conmon; retrying without it (see check section 8)"
+      unset 'rtargs[-1]'
+      ab_scoped "$SLICE" "ab-$NORM-$n" podman run -d "${rtargs[@]}" "${args[@]}" >/dev/null \
+        || ab_die "failed to start $name"
+    else
+      printf '%s\n' "$err" >&2; ab_die "failed to start $name"
+    fi
+  fi
+}
+
+A=$AB_STATE/auth
+# Bind targets for the generated instruction files must exist.
+declare -A instr=([claude]=claude/CLAUDE.md [codex]=codex/AGENTS.md [agy]=agy/GEMINI.md
+                  [copilot]=copilot/copilot-instructions.md)
+for ag in "${AGENTS[@]}"; do
+  mkdir -p "$A/$ag"; chmod 700 "$A/$ag"
+  f=$A/${instr[$ag]}
+  if [[ -L $f ]]; then ab_die "$f is a symlink: remove it (an agent may have planted it)"; fi
+  [[ -e $f ]] || : > "$f"
+done
+for ag in "${AGENTS[@]}"; do
+  case $ag in
+    claude) start_ctr claude "$RT" \
+              -v "$A/claude:/home/agent/.claude:rw" \
+              -v "$C/claude.md:/home/agent/.claude/CLAUDE.md:ro" \
+              -e CLAUDE_CONFIG_DIR=/home/agent/.claude -e DISABLE_AUTOUPDATER=1 \
+              -e IS_SANDBOX=1 ;;
+    codex)  start_ctr codex "$RT" \
+              -v "$A/codex:/home/agent/.codex:rw" \
+              -v "$C/codex.md:/home/agent/.codex/AGENTS.md:ro" \
+              -e CODEX_HOME=/home/agent/.codex ;;
+    agy)    start_ctr agy "$RT" \
+              -v "$A/agy:/home/agent/.gemini:rw" \
+              -v "$C/agy.md:/home/agent/.gemini/GEMINI.md:ro" \
+              -e AGY_CLI_DISABLE_AUTO_UPDATE=true -e GEMINI_FORCE_FILE_STORAGE=true ;;
+    copilot)
+      # Token: fine-grained PAT with ONLY "Copilot Requests" (README). It stays
+      # outside the mounted folder and reaches only this container.
+      tok=(); if [[ -f $A/copilot.env ]]; then tok=(--env-file "$A/copilot.env")
+      else ab_warn "copilot: $A/copilot.env missing (see README: Copilot token)"; fi
+      start_ctr copilot "$RT" \
+              -v "$A/copilot:/home/agent/.copilot:rw" \
+              -v "$C/copilot.md:/home/agent/.copilot/copilot-instructions.md:ro" \
+              -e COPILOT_HOME=/home/agent/.copilot -e COPILOT_AUTO_UPDATE=false \
+              "${tok[@]}" ;;
+  esac
+done
+((DEV)) && start_ctr dev "$DEVRT"
+
+# ---- 5. link private project files into /work (runs INSIDE the sandbox) ----
+# Done in a container, not on the host: /work is agent-writable, and host-side
+# file operations there could be redirected by planted symlinks.
+if ((CTX_FILES)) && [[ -n $(ls -A "$CTXP" 2>/dev/null) ]]; then
+  first=dev; ((DEV)) || first=${AGENTS[0]}
+  skipped=$(podman exec "$POD-$first" sh -c '
+    cd /work || exit 0; ex=.git/info/exclude
+    [ -d .git ] && { mkdir -p .git/info; grep -qxF /.agentbox "$ex" 2>/dev/null || echo /.agentbox >> "$ex"; }
+    for src in .agentbox/* .agentbox/.[!.]* .agentbox/..?*; do
+      [ -e "$src" ] || [ -L "$src" ] || continue
+      n=${src#.agentbox/}; [ "$n" = .git ] && continue
+      if [ -L "$n" ] && [ "$(readlink "$n")" = "$src" ]; then :
+      elif [ -e "$n" ] || [ -L "$n" ]; then echo "$n"; continue
+      else ln -s "$src" "$n"; fi
+      [ -d .git ] && { grep -qxF "/$n" "$ex" 2>/dev/null || echo "/$n" >> "$ex"; }
+    done' 2>/dev/null) || true
+  for n in $skipped; do
+    ab_warn "private $n not linked: the repository already has $n (agents still see /work/.agentbox/$n)"
+  done
+fi
+
+podman ps --filter "pod=$POD" --format '  {{.Names}}\t{{.Status}}'

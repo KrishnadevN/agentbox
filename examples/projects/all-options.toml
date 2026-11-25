@@ -1,0 +1,44 @@
+# examples/projects/all-options.toml — EVERY option, with its default.
+# Copy to ~/.config/agentbox/projects/<dir-name-in-~/Projects>.toml and keep only what you change.
+# Order of precedence: defaults.toml < config.toml < hosts/<host>.toml < this file < CLI options.
+
+[project]
+# profile = "python"        # image: base | python | web | docs
+# agents  = ["claude", "codex", "agy", "copilot"]   # one container each; fewer = less RAM
+# dev     = true            # "dev" container with NO AI logins (servers, builds, your shell)
+# dev_runtime = ""          # "" = same as [runtime] default; "crun" for dev servers that
+                            #   must see file changes made by agents (inotify)
+# publish = []              # ports -> 127.0.0.1 only, e.g. ["5173", "8888:8888"]
+# data_ro = []              # read-only -> /data/<name>, e.g. ["~/Data/microscopy-2026"]
+# ref_ro  = []              # read-only -> /ref/<name>,  e.g. ["~/Projects/other-paper"]
+                            #   (a working tree: uncommitted files and .env become readable)
+# mem  = ""                 # cap for THIS project, e.g. "48G" ("" = only the global cap)
+# cpus = 0                  # CPU threads for THIS project (0 = only the global cap)
+
+[runtime]
+# default = "runsc"         # runsc (gVisor, safer) | crun (faster, shares host kernel)
+# runsc_flags: do not change (both flags are required for rootless gVisor)
+
+[network]
+# mode = "open"             # open | offline (no network at all)
+# dns  = ["9.9.9.9", "1.1.1.1"]
+
+[resources]
+# threads_per_job = 0       # OMP/BLAS/numba threads per process (0 = project/global CPUs)
+# reserve_mem_gib_min, reserve_mem_pct, reserve_threads, memory_high_pct, tasks_max:
+#   GLOBAL settings, ignored here. Set them in hosts/<host>.toml.
+
+[tools]
+# update_max_age_hours = 12 # update agent CLIs before launch if older (0 = every launch)
+
+# Agent start commands (change flags, e.g. a model):
+# [agents.claude]
+# cmd = ["claude", "--dangerously-skip-permissions"]
+# [agents.codex]
+# cmd = ["codex", "--dangerously-bypass-approvals-and-sandbox"]
+# [agents.agy]
+# cmd = ["agy"]
+# [agents.copilot]
+# cmd = ["copilot", "--yolo", "--disable-builtin-mcps", "--no-auto-update"]
+
+# Not a project setting: tex_root lives in hosts/<host>.toml (used by profile "docs").

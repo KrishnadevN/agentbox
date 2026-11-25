@@ -1,0 +1,67 @@
+# agentbox package defaults. Do not edit for personal settings: override them in
+# ~/.config/agentbox/config.toml (all machines), hosts/<hostname>.toml (one machine)
+# and projects/<project>.toml (one project), same keys. CLI options win over all.
+# Examples: examples/ in this package.
+
+[resources]
+# Reserved for the HOST (desktop, browser, IDE). Agents together get the rest.
+reserve_mem_gib_min = 16     # reserve at least this much RAM ...
+reserve_mem_pct     = 20     # ... or this % of RAM, whichever is larger
+reserve_threads     = 4      # CPU threads kept free for the host
+memory_high_pct     = 90     # throttle at 90 % of the cap, kill at 100 %
+tasks_max           = 16384  # host tasks (crun only; see README for runsc)
+threads_per_job     = 0      # OMP/BLAS threads per process; 0 = all allowed CPUs
+
+[runtime]
+default     = "runsc"        # runsc (gVisor) | crun
+runsc_flags = ["ignore-cgroups", "network=host"]   # both REQUIRED for rootless runsc
+
+[network]
+mode = "open"                # open | offline
+dns  = ["9.9.9.9", "1.1.1.1"]
+
+[context]
+# Your agent context lives in ~/.agents-context (its own private git repo if you like):
+#   instructions/all.md, instructions/<agent>.md  -> added to each agent's context file
+#   skills/<name>/SKILL.md                        -> each agent's personal skills folder
+#   projects/<project>/                           -> /work/.agentbox in that project
+project_files = true         # mount projects/<project>/ writable at /work/.agentbox and
+                             # link its entries (AGENTS.md, .claude/, ...) into /work
+skills        = "ro"         # ro | rw | off   (rw lets one project's agent change skills
+                             # that agents in all other projects then use)
+
+[tools]
+update_max_age_hours = 12    # update agent CLIs before launch if older; 0 = always
+
+[project]
+profile     = "python"       # base | python | web | docs
+agents      = ["claude", "codex", "agy", "copilot"]
+dev         = true           # extra "dev" container with NO AI credentials
+dev_runtime = ""             # "" = same as runtime; "crun" helps dev servers (file watching)
+publish     = []             # ports, always bound to 127.0.0.1, e.g. ["5173"]
+data_ro     = []             # host dirs -> /data/<name> (read-only)
+ref_ro      = []             # host dirs -> /ref/<name>  (read-only)
+mem         = ""             # optional per-project cap, e.g. "48G"
+cpus        = 0              # optional per-project cap, 0 = global cap only
+
+# Commands started by `agentbox <project> <agent>` (yolo mode: the sandbox is the boundary).
+# git = the agent's own identity. agentbox never rewrites commits: commits use your
+# host git identity, and this value is only TOLD to the agent (context file), so your
+# AGENTS.md / CLAUDE.md can ask for e.g. a Co-authored-by trailer or --author.
+# Replace the .invalid addresses with real vendor noreply addresses if you want them.
+[agents.claude]
+cmd = ["claude", "--dangerously-skip-permissions"]
+git = "Claude <noreply@anthropic.com>"
+skills = ["/home/agent/.claude/skills"]
+[agents.codex]
+cmd = ["codex", "--dangerously-bypass-approvals-and-sandbox"]
+git = "Codex <codex@agentbox.invalid>"
+skills = ["/home/agent/.agents/skills"]
+[agents.agy]
+cmd = ["agy"]                # VERIFY the yolo flag with `agy --help`, then add it here
+git = "Antigravity <agy@agentbox.invalid>"
+skills = ["/home/agent/.gemini/antigravity/skills"]
+[agents.copilot]
+cmd = ["copilot", "--yolo", "--disable-builtin-mcps", "--no-auto-update"]
+git = "Copilot <copilot@agentbox.invalid>"
+skills = ["/home/agent/.agents/skills"]

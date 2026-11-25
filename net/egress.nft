@@ -1,0 +1,18 @@
+# Applied by agentbox-up inside each pod's network namespace (all its
+# containers share it). Agents have no CAP_NET_ADMIN, so they cannot change it.
+# Each block has a named counter: `agentbox <project> blocked` shows them.
+table inet agentbox
+delete table inet agentbox
+table inet agentbox {
+  chain out {
+    type filter hook output priority 0; policy accept;
+    oifname "lo" accept                     # pod-local localhost (dev servers)
+    ct state established,related accept
+    tcp dport 22 counter reject with tcp reset comment "ssh"
+    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } counter reject comment "lan"
+    ip daddr 100.64.0.0/10 counter reject comment "tailnet"
+    ip daddr 169.254.0.0/16 counter reject comment "link-local/host"
+    ip daddr { 127.0.0.0/8, 224.0.0.0/4, 0.0.0.0/8 } counter reject comment "other-ipv4"
+    ip6 daddr { fc00::/7, fe80::/10, ff00::/8, ::1 } counter reject comment "ipv6-private"
+  }
+}

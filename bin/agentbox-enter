@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# agentbox-enter <project> <claude|codex|agy|dev> [command...]   (default command: bash)
+set -euo pipefail
+p=${1:?usage: agentbox-enter <project> <container> [cmd...]}; c=${2:?container name}; shift 2
+(($#)) || set -- bash
+tty=(-i); [[ -t 0 && -t 1 ]] && tty=(-it)
+exec podman exec "${tty[@]}" -w /work \
+  -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-}" \
+  "ab-$p-$c" "$@"

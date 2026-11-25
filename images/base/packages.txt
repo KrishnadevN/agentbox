@@ -1,0 +1,14 @@
+# Shell basics
+ca-certificates curl wget git git-lfs less nano tmux procps tini tzdata
+ripgrep fd-find jq tree bc patch diffutils rsync shellcheck sqlite3 xxd bsdextrautils file
+iproute2 dnsutils netcat-openbsd
+ncurses-term kitty-terminfo          # terminfo for kitty, alacritty and others
+python3                              # used by setup scripts and many agent tools
+
+# Archives
+zip unzip p7zip-full xz-utils zstd
+
+# Inspect and convert files (PDF, images, documents)
+poppler-utils qpdf ghostscript       # pdftotext, pdfinfo, pdfimages, qpdf, gs
+imagemagick libimage-exiftool-perl webp
+pandoc fonts-dejavu-core

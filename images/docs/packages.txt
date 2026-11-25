@@ -1,0 +1,4 @@
+# TeX Live is NOT here: the host's TUG install is mounted read-only (tex_root).
+# Pandoc, Ghostscript, poppler and ImageMagick come from base.
+perl fontconfig
+fonts-noto-core fonts-noto-cjk fonts-liberation2

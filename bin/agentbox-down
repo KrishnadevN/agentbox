@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# agentbox-down <project>   Stop and remove the pod. Files, logins and caches stay.
+set -euo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+p=${1:?usage: agentbox-down <project>}
+if podman pod exists "ab-$p"; then
+  podman pod rm -f -t 5 "ab-$p" >/dev/null
+  echo "$(date -Is) down $p" >> "$AB_STATE/logs/launch.log"
+  ab_info "pod ab-$p removed"
+else
+  ab_info "pod ab-$p is not running"
+fi

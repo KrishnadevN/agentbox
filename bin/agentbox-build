@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# agentbox-build [profile...]   Build image layers (default: all, parents first).
+#   Layers are defined in images/profiles.toml (+ ~/.config/agentbox/images/).
+#   After changing a parent layer, rebuild its children too (default: all).
+# Builds use crun (trusted inputs; builds under gVisor are slow/fragile).
+set -euo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+ab_require_cmds podman python3
+
+plan=$(python3 "$AB_LIB/images.py" plan "$@") || exit 1
+[[ -n $plan ]] || ab_die "nothing to build"
+
+while IFS=$'\t' read -r name parent dirs; do
+  ab_section "building localhost/sbx-$name  (FROM $parent)"
+  ctx=$(mktemp -d); L=$ctx/layer; mkdir -p "$L/files" "$L/setup.d"
+  : > "$L/packages.txt"; envs=(); i=0
+  IFS=: read -ra dl <<< "$dirs"
+  for d in "${dl[@]}"; do
+    i=$((i + 1)); ab_step "using $d"
+    [[ -f $d/packages.txt ]] && { cat "$d/packages.txt"; echo; } >> "$L/packages.txt"
+    [[ -d $d/files ]] && cp -a "$d/files/." "$L/files/"
+    [[ -f $d/setup.sh ]] && cp "$d/setup.sh" "$L/setup.d/$i-setup.sh"
+    if [[ -f $d/env.txt ]]; then
+      while IFS= read -r line; do
+        line=${line%%#*}; line=${line%"${line##*[![:space:]]}"}
+        [[ -z $line ]] && continue
+        [[ $line == *=* ]] || ab_die "$d/env.txt: not KEY=VALUE: $line"
+        k=${line%%=*} v=${line#*=}; v=${v//\\/\\\\}; v=${v//\"/\\\"}
+        envs+=("ENV $k=\"$v\"")
+      done < "$d/env.txt"
+    fi
+  done
+  {
+    echo "FROM $parent"
+    echo "ARG DEBIAN_FRONTEND=noninteractive"
+    echo "COPY layer/ /tmp/agentbox-layer/"
+    cat <<'EOF'
+RUN set -e; L=/tmp/agentbox-layer; \
+    pk=$(sed -e 's/#.*//' "$L/packages.txt" | tr -s '[:space:]' ' '); \
+    if [ -n "${pk# }" ]; then apt-get update; apt-get install -y --no-install-recommends $pk; rm -rf /var/lib/apt/lists/*; fi; \
+    cp -a "$L/files/." /; \
+    for s in "$L"/setup.d/*.sh; do [ -e "$s" ] || continue; echo "== $s"; bash -e "$s"; done; \
+    rm -rf "$L"
+EOF
+    printf '%s\n' "${envs[@]}"
+    echo 'WORKDIR /work'
+    echo 'ENTRYPOINT ["/usr/bin/tini", "--"]'
+    echo 'CMD ["sleep", "infinity"]'
+  } > "$ctx/Containerfile"
+  pull=(); [[ $parent != localhost/* ]] && pull=(--pull=newer)
+  podman --runtime crun build "${pull[@]}" --label "agentbox.profile=$name" \
+    -t "localhost/sbx-$name:latest" "$ctx" || { rm -rf "$ctx"; ab_die "build of $name failed"; }
+  rm -rf "$ctx"
+done <<< "$plan"
+
+podman image prune -f >/dev/null
+podman system df

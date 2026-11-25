@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# agentbox — one command for daily use.
+#
+#   agentbox <project> [action] [options]
+#   agentbox list
+#   agentbox down-all  stop every agentbox pod
+#
+# actions:
+#   (none)            open a shell in the dev container     (v2: tmux layout)
+#   claude|codex|agy|copilot   start that agent in its own container (yolo mode)
+#   shell [name]      shell in the dev container, or in an agent container
+#   up | down | restart | status
+#   blocked           connections the egress rules refused (since the pod started)
+#   fetch             bring agent commits into ~/Projects/<p> as agent/* branches
+#   sync              publish your commits to the agents (they run: git fetch upstream)
+# options (up/agents/shell): --runtime runsc|crun  --mem 32G  --cpus N  --ro PATH  --offline  --no-update
+set -euo pipefail
+B=$(dirname "$(readlink -f "$0")")
+source "$B/../lib/common.sh"
+
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+[[ $# -ge 1 ]] || usage 1
+case $1 in
+  -h|--help) usage ;;
+  -V|--version) echo "agentbox $(cat "$AB_ROOT/VERSION" 2>/dev/null || echo unknown)"; exit 0 ;;
+esac
+
+if [[ $1 == down-all ]]; then
+  for pod in $(podman pod ls --format '{{.Name}}' --filter name='^ab-'); do "$B/agentbox-down" "${pod#ab-}"; done
+  exit 0
+fi
+if [[ $1 == list ]]; then
+  printf '%-28s %-8s %-9s %s\n' PROJECT CONFIG WORKTREE POD
+  for d in "$AB_PROJECTS"/*/; do
+    n=$(basename "$d")
+    c=-; [[ -f $AB_CONFIG/projects/$n.toml ]] && c=yes
+    w=-; [[ -d $AB_AGENTS/$n ]] && w=yes
+    s=-; podman pod exists "ab-$n" 2>/dev/null && s=$(podman pod inspect -f '{{.State}}' "ab-$n")
+    printf '%-28s %-8s %-9s %s\n' "$n" "$c" "$w" "$s"
+  done
+  exit 0
+fi
+
+p=$1; shift
+action=default; [[ $# -gt 0 && $1 != -* ]] && { action=$1; shift; }
+target=""; [[ $action == shell && $# -gt 0 && $1 != -* ]] && { target=$1; shift; }
+[[ -d $AB_PROJECTS/$p ]] || ab_die "no such project: $AB_PROJECTS/$p"
+
+upd=1; opts=()
+for o in "$@"; do [[ $o == --no-update ]] && upd=0 || opts+=("$o"); done
+S=$AB_PROJECTS/$p W=$AB_AGENTS/$p BR=$AB_STATE/bridge/$p.git
+
+case $action in
+  down)    exec "$B/agentbox-down" "$p" ;;
+  blocked) ns=$(ab_pod_netns "ab-$p"); [[ -n $ns ]] || ab_die "pod ab-$p is not running"
+           printf '%-18s %10s\n' BLOCKED PACKETS
+           podman unshare nsenter --net="$ns" nft list chain inet agentbox out \
+             | sed -nE 's/.*counter packets ([0-9]+) .*comment "([^"]+)".*/\2 \1/p' \
+             | while read -r name n; do printf '%-18s %10s\n' "$name" "$n"; done
+           exit 0 ;;
+  status)  podman ps -a --filter "pod=ab-$p" --format '{{.Names}}\t{{.Status}}'
+           systemctl --user status "agents-$(ab_norm "$p").slice" --no-pager 2>/dev/null | sed -n '1,8p'
+           exit 0 ;;
+  fetch)   # runs in YOUR repo; fetching does not execute the agent repo's config
+           git -C "$S" -c core.fsmonitor=false -c core.hooksPath=/dev/null fetch --prune agent
+           git -C "$S" branch -r --list 'agent/*' -v; exit 0 ;;
+  sync)    git -C "$S" push -q --force "$BR" 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
+           ab_ok "bridge updated; agents can now run: git fetch upstream"; exit 0 ;;
+  restart) "$B/agentbox-down" "$p" ;;
+esac
+
+[[ -d $W ]] || "$B/agentbox-new-worktree" "$p"
+cfgout=$(python3 "$AB_LIB/cfg.py" "$p" "${opts[@]}") || exit 1    # warnings shown here once
+eval "$cfgout"
+if ((upd)); then "$B/agentbox-update-tools" --if-older-than "$UPDATE_MAX_AGE_H"; fi
+AB_CFG_QUIET=1 "$B/agentbox-up" "$p" "${opts[@]}"
+
+case $action in
+  up|restart) exit 0 ;;
+  claude|codex|agy|copilot)
+    [[ " ${AGENTS[*]} " == *" $action "* ]] || ab_die "$action is not enabled for $p ($AB_CONFIG/projects/$p.toml: agents)"
+    declare -n cmd="CMD_$action"
+    exec "$B/agentbox-enter" "$p" "$action" "${cmd[@]}" ;;
+  shell)   exec "$B/agentbox-enter" "$p" "${target:-dev}" bash ;;
+  default) exec "$B/agentbox-enter" "$p" dev bash ;;   # v2: tmux layout goes here
+  *)       ab_die "unknown action: $action (try: agentbox -h)" ;;
+esac

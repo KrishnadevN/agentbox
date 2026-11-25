@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# agentbox-update-tools [--if-older-than HOURS]
+# Installs/updates npm, Claude Code, Codex CLI, Antigravity CLI and Copilot CLI into
+# ~/.local/share/agentbox/tools (mounted READ-ONLY into every sandbox).
+# Runs in a throw-away gVisor container with NO project and NO login mounts.
+set -euo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+T=$AB_STATE/tools
+if [[ ${1:-} == --if-older-than ]]; then
+  h=${2:?hours}
+  if ((h > 0)) && [[ -n $(find "$T/VERSIONS" -mmin -$((h * 60)) 2>/dev/null) ]]; then exit 0; fi
+fi
+podman image exists localhost/sbx-base:latest || ab_die "build images first (agentbox-build)"
+mkdir -p "$T"/{bin,npm}
+ab_step "updating agent CLIs (official installers) ..."
+podman run --rm --runtime runsc --runtime-flag ignore-cgroups --runtime-flag network=host \
+  --userns=keep-id --cap-drop=all --security-opt=no-new-privileges \
+  -v "$T:/tools:rw" localhost/sbx-base:latest bash -euo pipefail -c '
+    S=/tools/.staging; rm -rf "$S"; mkdir -p "$S/home"
+    export HOME=$S/home npm_config_cache=$S/npm-cache PATH=/tools/bin:$PATH
+    swap() { install -m 0755 "$1" "/tools/bin/.$2.new" && mv -f "/tools/bin/.$2.new" "/tools/bin/$2"; }
+
+    echo "[npm]    npm itself (shadows the image npm via PATH)"
+    npm_config_prefix=/tools/npm npm install -g --no-fund --no-audit npm@latest >/dev/null \
+      || echo "  WARN: npm self-update failed (image npm still works)"
+    export PATH=/tools/npm/bin:$PATH
+
+    echo "[codex]  npm @openai/codex (official package)"
+    npm_config_prefix=/tools/npm npm install -g --no-fund --no-audit @openai/codex@latest >/dev/null
+
+    echo "[claude] official native installer"
+    curl -fsSL https://claude.ai/install.sh | bash >/dev/null
+    swap "$(readlink -f "$HOME/.local/bin/claude")" claude
+
+    echo "[agy]    official install script"
+    if curl -fsSL https://antigravity.google/cli/install.sh | bash >/dev/null 2>&1; then
+      f=$(find "$HOME" -type f -name agy -perm -u+x 2>/dev/null | head -1)
+      [ -n "$f" ] && swap "$f" agy || echo "  WARN: agy binary not found after install"
+    else echo "  WARN: agy installer failed"; fi
+
+    echo "[copilot] official install script"
+    if curl -fsSL https://gh.io/copilot-install | bash >/dev/null 2>&1; then
+      f=$(find "$HOME" -type f -name copilot -perm -u+x 2>/dev/null | head -1)
+      [ -n "$f" ] && swap "$f" copilot || echo "  WARN: copilot binary not found after install"
+    else echo "  WARN: copilot installer failed"; fi
+
+    rm -rf "$S"
+    { date -Is
+      echo "claude $(/tools/bin/claude --version 2>/dev/null || echo missing)"
+      echo "codex  $(/tools/npm/bin/codex --version 2>/dev/null || echo missing)"
+      echo "agy    $(/tools/bin/agy --version 2>/dev/null || echo missing)"
+      echo "copilot $( (/tools/bin/copilot --version 2>/dev/null || echo missing) | head -1)"
+      echo "npm    $(/tools/npm/bin/npm --version 2>/dev/null || echo missing)"; } > /tools/VERSIONS
+  '
+cat "$T/VERSIONS"
