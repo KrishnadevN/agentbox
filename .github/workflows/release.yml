@@ -1,0 +1,42 @@
+# Creates a GitHub release when a version tag is pushed (e.g. v0.2.0, v0.2.0-beta.1).
+# Release notes = the matching "## <version>" section of CHANGELOG.md.
+# Pre-release when the version is below 1.0 or has a suffix (-alpha, -beta, -rc).
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.1.0)"
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Check version and extract notes
+        id: v
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          ver="${tag#v}"
+          [ "$(cat VERSION)" = "$ver" ] || { echo "::error::VERSION file says $(cat VERSION), tag is $tag"; exit 1; }
+          awk -v v="$ver" '
+            /^## / { if (found) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::no '## $ver' section in CHANGELOG.md"; exit 1; }
+          pre=false
+          case "$ver" in 0.*|*-*) pre=true ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "pre=$pre" >> "$GITHUB_OUTPUT"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--title "agentbox ${{ steps.v.outputs.tag }}" --notes-file notes.md --verify-tag)
+          [ "${{ steps.v.outputs.pre }}" = true ] && flags+=(--prerelease) || flags+=(--latest)
+          gh release create "${{ steps.v.outputs.tag }}" "${flags[@]}"
