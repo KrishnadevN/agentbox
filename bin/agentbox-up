@@ -9,6 +9,7 @@ ab_require_cmds podman python3 systemd-run nft git
 p=$1; shift
 cfgout=$(python3 "$AB_LIB/cfg.py" "$p" "$@") || exit 1
 eval "$cfgout"
+ab_require_layout "$POD"
 
 [[ -d $WORK ]]   || ab_die "$WORK missing: run 'agentbox-new-worktree $P' first"
 [[ -d $BRIDGE ]] || ab_die "$BRIDGE missing: run 'agentbox-new-worktree $P' first"
@@ -124,7 +125,7 @@ PY
   # container. Default rootless mapping: root in the container = YOU on the host
   # (no capabilities), so files in /work stay owned by you.
   pmem=${PMEM:-$MEMMAX} pcpu=${PCPUS:-$CPUS}
-  podman pod create --name "$POD" --label "agentbox.cfg=$CFGHASH" \
+  podman pod create --name "$POD" --label "agentbox.cfg=$CFGHASH" --label "agentbox.layout=$AB_LAYOUT" \
     --share net \
     --memory "$pmem" --memory-swap "$pmem" --cpus "$pcpu" \
     "${netargs[@]}" "${podargs[@]}" >/dev/null
@@ -159,16 +160,9 @@ path=/opt/agentbox/tools/bin:/opt/agentbox/tools/npm/bin:/usr/local/bin:/usr/bin
 [[ -n $TEX_ROOT ]] && path=$TEX_ROOT/bin/x86_64-linux:$path
 mkdir -p "$AB_STATE"/cache/{uv,pnpm,npm}
 
-# Host folder that backs a path in the agent's home (login folders are separate mounts).
+# Host folder that backs a path in the agent's home (config folders included).
 host_dir_for() {  # host_dir_for <agent> <container-path>  -> "BASE<TAB>REL"
-  local ag=$1 p=${2#/home/agent/} base=$AB_STATE/home/$P/$1
-  case $p in
-    .claude/*)  [[ $ag == claude ]]  && { base=$AB_STATE/auth/claude;  p=${p#.claude/}; } ;;
-    .codex/*)   [[ $ag == codex ]]   && { base=$AB_STATE/auth/codex;   p=${p#.codex/}; } ;;
-    .gemini/*)  [[ $ag == agy ]]     && { base=$AB_STATE/auth/agy;     p=${p#.gemini/}; } ;;
-    .copilot/*) [[ $ag == copilot ]] && { base=$AB_STATE/auth/copilot; p=${p#.copilot/}; } ;;
-  esac
-  printf '%s\t%s\n' "$base" "$p"
+  printf '%s\t%s\n' "$AB_STATE/home/$P/$1" "${2#/home/agent/}"
 }
 context_mounts() {  # context_mounts <name>  -> fills CTXM array
   local n=$1 d base rel; CTXM=()
@@ -233,29 +227,32 @@ start_ctr() {  # start_ctr <name> <runtime> [extra podman args...]
   fi
 }
 
+# Each agent's config folder (login, settings, conversations) is part of its home,
+# which exists once per project and agent: nothing there is shared between projects.
+# Bind targets for the generated instruction files must exist (the home is
+# agent-writable, so create them without following symlinks).
 A=$AB_STATE/auth
-# Bind targets for the generated instruction files must exist.
-declare -A instr=([claude]=claude/CLAUDE.md [codex]=codex/AGENTS.md [agy]=agy/GEMINI.md
-                  [copilot]=copilot/copilot-instructions.md)
+declare -A instr=([claude]=.claude/CLAUDE.md [codex]=.codex/AGENTS.md [agy]=.gemini/GEMINI.md
+                  [copilot]=.copilot/copilot-instructions.md)
 for ag in "${AGENTS[@]}"; do
-  mkdir -p "$A/$ag"; chmod 700 "$A/$ag"
-  f=$A/${instr[$ag]}
-  if [[ -L $f ]]; then ab_die "$f is a symlink: remove it (an agent may have planted it)"; fi
-  [[ -e $f ]] || : > "$f"
+  mkdir -p "$AB_STATE/home/$P/$ag"
+  ab_safe_touch "$AB_STATE/home/$P/$ag" "${instr[$ag]}" || exit 1
 done
 for ag in "${AGENTS[@]}"; do
   case $ag in
     claude) start_ctr claude "$RT" \
-              -v "$A/claude:/home/agent/.claude:rw" \
               -v "$C/claude.md:/home/agent/.claude/CLAUDE.md:ro" \
               -e CLAUDE_CONFIG_DIR=/home/agent/.claude -e DISABLE_AUTOUPDATER=1 \
               -e IS_SANDBOX=1 ;;
     codex)  start_ctr codex "$RT" \
-              -v "$A/codex:/home/agent/.codex:rw" \
               -v "$C/codex.md:/home/agent/.codex/AGENTS.md:ro" \
-              -e CODEX_HOME=/home/agent/.codex ;;
+              -e CODEX_HOME=/home/agent/.codex
+            # Defaults for a new project, written inside the container (agent-writable home).
+            ab_scoped "$SLICE" "ab-$NORM-codex-init" podman exec "$POD-codex" sh -c 'f=$CODEX_HOME/config.toml
+              [ -e "$f" ] || [ -L "$f" ] || printf "%s\n" "cli_auth_credentials_store = \"file\"" \
+                "check_for_update_on_startup = false" > "$f"' \
+              || ab_warn "codex: could not write default ~/.codex/config.toml" ;;
     agy)    start_ctr agy "$RT" \
-              -v "$A/agy:/home/agent/.gemini:rw" \
               -v "$C/agy.md:/home/agent/.gemini/GEMINI.md:ro" \
               -e AGY_CLI_DISABLE_AUTO_UPDATE=true -e GEMINI_FORCE_FILE_STORAGE=true ;;
     copilot)
@@ -264,7 +261,6 @@ for ag in "${AGENTS[@]}"; do
       tok=(); if [[ -f $A/copilot.env ]]; then tok=(--env-file "$A/copilot.env")
       else ab_warn "copilot: $A/copilot.env missing (see README: Copilot token)"; fi
       start_ctr copilot "$RT" \
-              -v "$A/copilot:/home/agent/.copilot:rw" \
               -v "$C/copilot.md:/home/agent/.copilot/copilot-instructions.md:ro" \
               -e COPILOT_HOME=/home/agent/.copilot -e COPILOT_AUTO_UPDATE=false \
               "${tok[@]}" ;;

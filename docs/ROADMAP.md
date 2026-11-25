@@ -11,31 +11,30 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ## 0.2.0 — Nested projects and composable images (high)
 
-### [ ] 1. Per-project agent sessions (privacy fix)
+### [x] 1. Per-project agent config folders (privacy fix)
 
-Problem: each agent's config folder (`auth/<agent>`) is shared by all projects, and the
-working directory is `/work` everywhere. So conversation history from every project lands
-in the same place: Claude Code under `projects/-work/` (plus `history.jsonl`, todos, file
-history), Codex under `sessions/` and `history.jsonl`, Copilot and Antigravity similarly.
-Effects: `/resume` lists sessions of all projects mixed, `--continue` can pick up another
-project's conversation, and an agent in project A can read project B's transcripts.
+Problem: each agent's config folder (`auth/<agent>`) was shared by all projects, and the
+working directory is `/work` everywhere, so conversations, history, paste caches and
+memories of every project landed in the same place: `/resume` mixed projects,
+`--continue` could pick up another project's conversation, and an agent in project A
+could read project B's transcripts.
 
-Design:
-- Keep the login shared; make session data per project. New per-agent config
-  `sessions = [...]`: paths inside the agent's config folder that are bind-mounted from
-  `~/.local/share/agentbox/sessions/<project>/<agent>/...` over the shared folder.
-  Defaults to verify against current versions (folders and files):
-  Claude `projects/`, `history.jsonl`, `todos/`, `file-history/`, `shell-snapshots/`,
-  `plans/`; Codex `sessions/`, `archived_sessions/`, `history.jsonl`; Copilot
-  `session-state/`, `history-session-state/`; Antigravity: find its session folder.
-- Create mount points with `ab_safe_mkdir`; create file targets only if missing and not
-  symlinks (same rule as the instruction files).
-- One-time migration is not needed (old mixed history stays in the shared folder); say so
-  in the CHANGELOG and suggest deleting it.
-- Afterwards `/resume` and `--continue` (item 9) only see the current project's sessions.
+Design (decided): the whole config folder is per project. It lives in the agent's home,
+which already exists once per project and agent (`home/<project>/<agent>`); the shared
+`auth/<agent>` mounts are gone. Listing per-project paths inside a shared folder was
+tried and rejected: the CLIs keep adding files, rewrite files by rename, and keep SQLite
+side files and locks next to them.
+- Claude Code, Codex and Antigravity log in once per project (their native flows).
+  Copilot keeps the shared `auth/copilot.env` token (Copilot Requests only).
+- Pods carry `agentbox.layout=2`; `agentbox-up` and `agentbox-enter` refuse a running pod
+  without it and ask for a restart.
+- Old `auth/<agent>/` folders are left alone; the CHANGELOG says to delete them by hand.
+- Later, if per-project logins become a nuisance: an opt-in shared Claude token
+  (`claude setup-token`).
 
-Acceptance: check suite — a file written to the session folder in project A is not visible
-in project B's container; the login file is still shared.
+Acceptance: check suite — a marker in project A's config folder is not visible in a second
+project, each agent's instruction file is in place in both, and both launcher paths
+refuse a running pod without the layout label.
 
 ### [ ] 2. Nested project discovery
 

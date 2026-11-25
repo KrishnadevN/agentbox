@@ -156,18 +156,8 @@ bad=$(grep -rniE 'map-gw|map-host-loopback|allow_host_loopback' /usr/share/conta
 
 ab_section "8. Folders"
 run mkdir -p "$AB_PROJECTS" "$AB_AGENTS" \
-  "$AB_STATE"/{tools/{bin,npm},auth/{claude,codex,agy,copilot},home,ctx,bridge,cache/{uv,pnpm,npm},logs}
-run chmod 700 "$AB_STATE" "$AB_STATE/auth" "$AB_STATE"/auth/* "$AB_AGENTS"
-# Bind targets for the generated instruction files, and safe default settings.
-for f in claude/CLAUDE.md codex/AGENTS.md agy/GEMINI.md copilot/copilot-instructions.md; do
-  [[ -e $AB_STATE/auth/$f ]] || run touch "$AB_STATE/auth/$f"
-done
-if [[ ! -e $AB_STATE/auth/codex/config.toml ]] && ((!DRY)); then
-  printf 'cli_auth_credentials_store = "file"\ncheck_for_update_on_startup = false\n' > "$AB_STATE/auth/codex/config.toml"
-fi
-if [[ ! -e $AB_STATE/auth/claude/settings.json ]] && ((!DRY)); then
-  printf '{\n  "env": { "DISABLE_AUTOUPDATER": "1" }\n}\n' > "$AB_STATE/auth/claude/settings.json"
-fi
+  "$AB_STATE"/{tools/{bin,npm},auth,home,ctx,bridge,cache/{uv,pnpm,npm},logs}
+run chmod 700 "$AB_STATE" "$AB_STATE/auth" "$AB_AGENTS"   # auth/: token files (copilot.env)
 fs=$(findmnt -no FSTYPE -T "$AB_STATE"); fs2=$(findmnt -no FSTYPE -T "$AB_AGENTS")
 ab_ok "folders ready ($AB_STATE on $fs, $AB_AGENTS on $fs2)"
 [[ $fs == btrfs && $fs2 == btrfs ]] || ab_info "not btrfs: uv falls back to copying (works, uses more disk)"

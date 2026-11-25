@@ -37,6 +37,11 @@ expect_not() { local d=$1; shift; if "$@" >/dev/null 2>&1; then fail "$d"; else 
 P=agentbox-selftest POD=ab-agentbox-selftest
 SLICE=agents-$(ab_norm "$P").slice
 S=$AB_PROJECTS/$P W=$AB_AGENTS/$P
+# Extra fixtures get fresh names per run; cleanup removes only what this run created.
+RUNID=$(date +%s)-$$
+P2=agentbox-selftest-b-$RUNID PL=agentbox-selftest-legacy-$RUNID
+POD2=ab-$P2 S2=$AB_PROJECTS/$P2 W2=$AB_AGENTS/$P2 SLICE2=agents-$(ab_norm "$P2").slice
+MADE2=0 MADEL=0
 DATA=$HOME/agentbox-selftest-data SECRET=$HOME/.agentbox-selftest-secret
 cx() { local c=$1; shift; podman exec "$POD-$c" bash -c "$*"; }   # run in a container
 
@@ -99,6 +104,13 @@ cleanup() {
     rm -rf "$S" "$DATA" "$SECRET" "$AB_STATE/bridge/$P.git" "$AB_STATE/ctx/$P" "$AB_CONTEXT/projects/$P"
     rm -f "$HOME/.config/systemd/user/$SLICE"
   fi
+  if ((MADE2)); then
+    podman pod rm -f -t 2 "$POD2" >/dev/null 2>&1
+    podman unshare rm -rf "$W2" "$AB_STATE/home/$P2" 2>/dev/null
+    rm -rf "$S2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" "$AB_CONTEXT/projects/$P2"
+    rm -f "$HOME/.config/systemd/user/$SLICE2"
+  fi
+  ((MADEL)) && podman pod rm -f -t 2 "ab-$PL" >/dev/null 2>&1
 }
 trap cleanup EXIT
 podman pod rm -f -t 2 "$POD" >/dev/null 2>&1
@@ -135,6 +147,7 @@ expect     "sandbox context file present" cx claude "grep -q 'Sandbox context' /
 expect     "AGENTBOX env vars set" cx claude 'test "$AGENTBOX" = 1 -a -n "$AGENTBOX_HOST"'
 expect     "Claude sees its CLAUDE.md" cx claude "grep -q 'Sandbox context' ~/.claude/CLAUDE.md"
 expect     "Codex sees its AGENTS.md" cx codex "grep -q 'Sandbox context' ~/.codex/AGENTS.md"
+expect     "Antigravity sees its GEMINI.md" cx agy "grep -q 'Sandbox context' ~/.gemini/GEMINI.md"
 expect     "Copilot sees its copilot-instructions.md" cx copilot "grep -q 'Sandbox context' ~/.copilot/copilot-instructions.md"
 expect_not "Copilot token is NOT visible to other agents" cx claude "env | grep -q COPILOT_GITHUB_TOKEN"
 expect     "updated npm is first in PATH" cx dev 'test "$(command -v npm)" = /opt/agentbox/tools/npm/bin/npm'
@@ -147,6 +160,76 @@ for c in claude codex agy copilot dev; do
     expect_not "$c cannot see $o login (~/${own[$o]})" cx "$c" "test -e ~/${own[$o]}"
   done
 done
+
+# Config folders (logins, conversations) are per project: a second project must not
+# see the first one's files. Each assertion is one successful exec in a running
+# container, so a failed exec never counts as isolation.
+# Every path cleanup can remove must be new (symlinks included) before the run claims it.
+fixture_free() {  # fixture_free <path>...  -> fails if any exists
+  local f; for f in "$@"; do [[ -e $f || -L $f ]] && return 1; done; return 0
+}
+if ! fixture_free "$S2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
+     "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" || podman pod exists "$POD2"; then
+  fail "fixture $P2 already exists; not touching it"
+elif MADE2=1 && mkdir -p "$S2" && git -C "$S2" init -q -b main && echo "# selftest2" > "$S2/README.md" \
+  && git -C "$S2" add . && git -C "$S2" -c user.name=t -c user.email=t@t commit -qm init \
+  && "$B/agentbox-new-worktree" "$P2" >/dev/null && "$B/agentbox-up" "$P2" "${UPOPTS[@]}" >/dev/null; then
+  pass "second project started"
+  declare -A ins=([claude]=.claude/CLAUDE.md [codex]=.codex/AGENTS.md [agy]=.gemini/GEMINI.md
+                  [copilot]=.copilot/copilot-instructions.md)
+  for c in claude codex agy copilot; do
+    d=${own[$c]} ma=.ab-a-$RANDOM mb=.ab-b-$RANDOM
+    expect "$c: project 1 writes a marker in ~/$d" podman exec "$POD-$c" bash -c "echo a > ~/$d/$ma"
+    expect "$c: project 2 writes its own marker and cannot see project 1's" podman exec "$POD2-$c" \
+      bash -c "echo b > ~/$d/$mb && test -f ~/$d/$mb && ! test -e ~/$d/$ma"
+    expect "$c: project 1 cannot see project 2's marker" podman exec "$POD-$c" \
+      bash -c "test -f ~/$d/$ma && ! test -e ~/$d/$mb"
+    expect "$c: instruction file in place in project 2" podman exec "$POD2-$c" \
+      bash -c "grep -q 'Sandbox context' ~/${ins[$c]}"
+  done
+else
+  fail "second project failed to start"
+fi
+
+# A pod from an older agentbox (no layout label) must be refused while it runs, also
+# when only some of its containers run (Degraded). No network, nothing but sleep.
+legacy_refused() {  # legacy_refused <state description>
+  local cmd out args
+  for cmd in agentbox-enter agentbox-up; do
+    args=("$PL"); [[ $cmd == agentbox-enter ]] && args+=(dev true)
+    if out=$("$B/$cmd" "${args[@]}" 2>&1); then
+      fail "$cmd entered a $1 pod without the layout label"
+    elif [[ $out == *"agentbox $PL restart"* ]]; then
+      pass "$cmd refuses a $1 pod from an older agentbox"
+    else
+      fail "$cmd failed on the $1 legacy pod without the restart message: ${out##*$'\n'}"
+    fi
+  done
+}
+if podman pod exists "ab-$PL"; then
+  fail "fixture ab-$PL already exists; not touching it"
+else
+  MADEL=1
+  img=localhost/sbx-base:latest
+  lstate() { podman pod inspect -f '{{.State}}' "ab-$PL" 2>/dev/null; }
+  if podman pod create --name "ab-$PL" --network none >/dev/null \
+     && ab_scoped "$SLICE" "ab-legacy-infra" podman pod start "ab-$PL" >/dev/null \
+     && ab_scoped "$SLICE" "ab-legacy-dev" podman run -d --pod "ab-$PL" --name "ab-$PL-dev" \
+          --cap-drop=all --read-only "$img" sleep 300 >/dev/null \
+     && [[ $(lstate) == Running ]]; then
+    legacy_refused running
+    # A second container that exits leaves the pod Degraded (only some containers run).
+    if ab_scoped "$SLICE" "ab-legacy-done" podman run --pod "ab-$PL" --name "ab-$PL-done" \
+         --cap-drop=all --read-only "$img" true >/dev/null && [[ $(lstate) == Degraded ]]; then
+      legacy_refused degraded
+    else
+      fail "legacy pod fixture did not reach Degraded (state '$(lstate)'): degraded case not tested"
+    fi
+  else
+    fail "legacy pod fixture did not reach Running (state '$(lstate)'): legacy guard not tested"
+  fi
+  podman pod rm -f -t 2 "ab-$PL" >/dev/null 2>&1
+fi
 
 # ===========================================================================
 ab_section "6. Network isolation"
@@ -335,8 +418,8 @@ if command -v compsize >/dev/null; then ab_info "run 'sudo compsize <venv> $AB_S
 
 ab_section "13. Manual checks (not automated)"
 cat <<EOF
-  - Logins: agentbox <project> claude / codex / agy -> log in once each (copilot: token file, see README); restart -> still logged in.
-    Token files: $(ls "$AB_STATE"/auth/claude/.credentials.json "$AB_STATE"/auth/codex/auth.json 2>/dev/null | tr '\n' ' ')
+  - Logins: agentbox <project> claude / codex / agy -> log in once per project (copilot: token file, see README);
+    restart -> still logged in; a second project asks for its own login.
   - Persistence: start an agent inside host tmux, detach (Ctrl-b d), close the terminal, reattach.
   - Never open $AB_AGENTS/* in an IDE with git integration.
 EOF

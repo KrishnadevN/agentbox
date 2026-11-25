@@ -5,6 +5,17 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- Privacy fix: each agent's config folder (login, settings, conversations, history) is now
+  per project, in `~/.local/share/agentbox/home/<project>/<agent>/`. Before, one folder in
+  `~/.local/share/agentbox/auth/` was shared by all projects: `/resume` mixed projects,
+  `--continue` could pick up another project's conversation, and an agent could read
+  other projects' transcripts. Claude Code, Codex and Antigravity now ask you to log in
+  once per project; the Copilot token file stays shared.
+  Upgrade: restart running pods (`agentbox <project> restart`; agentbox refuses to enter
+  pods started by the old version) and log in again. The old folders
+  `~/.local/share/agentbox/auth/{claude,codex,agy,copilot}/` are no longer used; they hold
+  the old conversations of all projects. Delete them yourself when you no longer need
+  them (keep `auth/copilot.env`); agentbox never deletes them.
 - Base image: `bubblewrap` and `socat` added, because agent CLIs check for them at
   startup. They stay unused: agentbox itself is the sandbox. Rebuild with `agentbox-build`.
 

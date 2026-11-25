@@ -13,6 +13,8 @@ jobs:
         run: shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash
       - name: Python
         run: python3 -m py_compile lib/*.py
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
       - name: zsh and fish syntax
         run: zsh -n shell/agentbox.zsh && fish -n shell/agentbox.fish
       - name: TOML files parse

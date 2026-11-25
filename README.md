@@ -82,8 +82,9 @@ Inside the sandbox:
 - **Kernel.** Agents run on gVisor, a kernel written in user space. Most kernel exploits
   do not reach your real kernel. You can switch a project to plain containers (`crun`)
   when gVisor is too slow or incompatible.
-- **Files.** Only the project copy, the folders you list as read-only, the agents' own
-  login folder, and shared package caches. No home folder, no SSH keys, no keyring.
+- **Files.** Only the project copy, the folders you list as read-only, the agent's own
+  config folder for this project, and shared package caches. No home folder, no SSH
+  keys, no keyring.
 - **Network.** The public internet works. Your LAN, your Tailscale tailnet, services on
   your machine's localhost, link-local addresses and outgoing SSH are blocked. Name
   lookups go through your host's own resolver (via Podman's DNS forwarder), so DNS works
@@ -167,8 +168,11 @@ Agents keep running when you close the terminal only if you started them inside 
 
 ### Logging in
 
-You log in once per agent and machine. Logins live in `~/.local/share/agentbox/auth/`,
-are kept between runs, and are never copied anywhere.
+You log in once per agent and project. Each agent's config folder (login, settings,
+plugins, conversations) lives in its home for that project,
+`~/.local/share/agentbox/home/<project>/<agent>/`. It is kept between runs and never
+shared with another project, so an agent in one project cannot read another project's
+conversations, and `/resume` lists only this project's. Only the Copilot token is shared.
 
 - **Claude Code:** start it, type `/login`, open the link on your machine, paste the code.
 - **Codex:** turn on device-code login in your ChatGPT security settings. Then

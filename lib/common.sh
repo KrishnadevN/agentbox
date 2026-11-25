@@ -59,12 +59,30 @@ ab_scoped() {
 # ab_safe_mkdir BASE REL...  create folders inside an agent-writable BASE without
 # following symlinks (see lib/safe_mkdir.py)
 ab_safe_mkdir() { python3 "$AB_LIB/safe_mkdir.py" "$@"; }
+# ab_safe_touch BASE REL...  same for files: create empty if missing, refuse symlinks
+ab_safe_touch() { python3 "$AB_LIB/safe_mkdir.py" --file "$@"; }
 
 # ab_pod_netns <pod>  -> path of the pod's network namespace (empty if none)
 ab_pod_netns() {
   local infra
   infra=$(podman pod inspect -f '{{.InfraContainerID}}' "$1" 2>/dev/null) || return 0
   podman inspect -f '{{.NetworkSettings.SandboxKey}}' "$infra" 2>/dev/null || true
+}
+
+# Pods carry the label agentbox.layout. Layout 2: each agent's config folder (logins,
+# conversations) lives in its per-project home; older pods share it between projects.
+AB_LAYOUT=2
+ab_layout_ok() {   # ab_layout_ok <pod>: the pod has the current layout label
+  [[ $(podman pod inspect -f '{{index .Labels "agentbox.layout"}}' "$1" 2>/dev/null) == "$AB_LAYOUT" ]]
+}
+ab_old_layout() {  # ab_old_layout <pod>: refuse with what to do
+  ab_die "pod $1 was started by an older agentbox (logins shared by all projects): run 'agentbox ${1#ab-} restart'"
+}
+# ab_require_layout <pod>  (launcher) refuse a pod with an older layout while any of its
+# containers run (Running, or Degraded = only some running); stopped pods are recreated
+ab_require_layout() {
+  case $(podman pod inspect -f '{{.State}}' "$1" 2>/dev/null) in Running|Degraded) ;; *) return 0 ;; esac
+  ab_layout_ok "$1" || ab_old_layout "$1"
 }
 
 ab_require_cmds() {
