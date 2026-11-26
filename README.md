@@ -50,6 +50,7 @@ If you work in a similar way, it may suit you too. If not, look at the
 - [Your first project](#your-first-project)
 - [Working with agent commits](#working-with-agent-commits)
 - [Telling agents what to do](#telling-agents-what-to-do)
+- [Moving or renaming a project](#moving-or-renaming-a-project)
 - [Configuration](#configuration)
 - [Image layers](#image-layers)
 - [What agentbox does not protect](#what-agentbox-does-not-protect)
@@ -90,8 +91,11 @@ Inside the sandbox:
   lookups go through your host's own resolver (via Podman's DNS forwarder), so DNS works
   on networks that block outside DNS servers; agents can look up internal names, but not
   connect to them.
-- **Git.** Agents commit as you (your global git name and email), but they have no
-  credentials, so they cannot push. You review and push from your own repository.
+- **Git.** Agents commit as you (your global git name and email). agentbox passes none
+  of your git credentials (SSH keys, tokens, credential helpers) into the sandbox, so
+  they cannot push; you review and push from your own repository. Anything you hand them
+  yourself, a read-only folder or an `env` value, is readable in full, secrets included
+  (see `project:` references below).
 - **Resources.** All agents together get your RAM and CPUs minus a reserve that you set,
   so your desktop stays usable. Thread variables (OpenMP, BLAS, numba) follow the limit.
 
@@ -103,7 +107,8 @@ Python ≥ 3.11, git, tmux, gVisor). On other distributions it tells you what is
 support for more distributions is welcome.
 
 ```
-git clone https://github.com/<owner>/agentbox ~/.agentbox
+git clone https://github.com/KrishnadevN/agentbox ~/.agentbox
+git -C ~/.agentbox checkout v0.2.0-beta.1          # a release; skip for the latest main
 ~/.agentbox/scripts/agentbox-prep.sh --dry-run    # shows what it would change
 ~/.agentbox/scripts/agentbox-prep.sh              # asks for sudo where needed
 ```
@@ -174,6 +179,7 @@ its container. Other commands:
 | Stop everything | `agentbox down-all` |
 | List projects and pods (a tree by folder) | `agentbox list` |
 | Only one folder, or one tag | `agentbox list research`, `agentbox list --tag paper` |
+| Rename a project | see [Moving or renaming a project](#moving-or-renaming-a-project) |
 
 Agents keep running when you close the terminal only if you started them inside tmux
 (or similar) on the host. For long jobs, start tmux first and detach with `Ctrl-b d`.
@@ -203,8 +209,9 @@ optional Claude token below) is shared.
   project. It uses your subscription, like `/login`, but can only make model requests:
   claude.ai connectors and Remote Control are not available with it (`/login` in a
   session switches that session back). It lasts up to a year; revoke it in your
-  claude.ai settings. After adding,
-  replacing or removing the file, restart running projects (`agentbox <project>
+  claude.ai settings. The claude container of every project that runs Claude can read
+  it, so one leak exposes your subscription everywhere until you revoke it. After
+  adding, replacing or removing the file, restart running projects (`agentbox <project>
   restart`): until then they keep the old token, even a removed one. Codex and
   Antigravity have no such token for personal plans; log in once per project.
 - **Codex:** turn on device-code login in your ChatGPT security settings. Then
@@ -388,16 +395,18 @@ A list in a later file replaces the earlier list; lists are not merged. Tables s
 
 **Environment variables.** `[project] env = { KEY = "value" }` sets variables in every
 container of the project (agents and dev). agentbox's own variables (`HOME`, `PATH`,
-`AGENTBOX_*`, `GIT_CONFIG_GLOBAL`, the Copilot token) cannot be changed this way; such
-keys are ignored with a warning. Every agent can read the values (so can
+`AGENTBOX_*`, `GIT_CONFIG_GLOBAL`, the Copilot and Claude tokens) cannot be changed this
+way; such keys are ignored with a warning. Every agent can read the values (so can
 `podman inspect`), so don't put secrets there that you would not give the agents.
 
 **Other projects, read-only.** Besides host folders, `ref_ro` and `data_ro` (and
 `--ro` on the command line) accept two references, mounted read-only at `/ref/<name>`
 (`/data/<name>` in `data_ro`):
 
-- `project:<name>`: your repository of that project, as you have it in `~/Projects`,
-  including uncommitted files.
+- `project:<name>`: your repository of that project, as you have it in `~/Projects`:
+  the whole working tree, including `.git`, uncommitted files and ignored files such as
+  `.env`. Read-only does not stop agents from reading or uploading any of it, so don't
+  reference a repository that holds secrets.
 - `agents:<name>`: that project's agent copy (`~/.agents-projects/<name>`), with
   whatever its agents have written, committed or not. Its private files
   (`/work/.agentbox` there) are not included. Treat the content like anything agents
@@ -475,6 +484,11 @@ Please read this before you hand an agent anything important.
   wrong.
 - **Agents trust each other.** All agents of a project share `/work`. One can change a
   script that another, or you, will run later.
+- **Projects you connect.** A `project:<name>` reference shows agents your whole
+  repository, `.git`, `.env` and uncommitted files included. An `agents:<name>`
+  reference lets one project's agents read what another project's agents wrote,
+  including text meant to mislead them. A shared Claude token (`claude.env`) is
+  readable in the claude container of every project that runs Claude.
 - **`crun` shares your kernel.** Projects that use it give up the gVisor layer.
 - **Shared caches.** uv, npm and pnpm caches are shared between projects. Use lockfiles.
 - **The agent CLIs themselves** are installed with their vendors' official installers,
@@ -514,7 +528,10 @@ own image layers and per-project settings, and a code base small enough to read.
 - Update gVisor with `agentbox-prep.sh --update-runsc`, the images with `agentbox-build`.
   For reproducible builds, pin the base image digest in `images/profiles.toml`.
 - Update TeX Live with `agentbox-install-texlive.sh --update`.
-- `agentbox --version` prints the installed version; see `CHANGELOG.md` for changes.
+- `agentbox --version` prints the installed version. To update agentbox, read the
+  upgrade steps for the new version in `CHANGELOG.md` first, then
+  `git -C ~/.agentbox fetch --tags && git -C ~/.agentbox checkout v<version>` (or
+  `git pull` if you follow main).
 
 ## Troubleshooting
 
@@ -533,10 +550,13 @@ own image layers and per-project settings, and a code base small enough to read.
 
 ```
 bin/        commands: agentbox, agentbox-up/-down/-enter/-build/-update-tools/-new-worktree
-lib/        shell helpers, config merging (cfg.py), image layers (images.py)
+lib/        shell helpers, config merging (cfg.py), project discovery (projects.py),
+            image layers (images.py), rename (rename.py)
 images/     profiles.toml and one folder per layer
 scripts/    host preparation, check suite, TeX Live installer
-examples/   config, host, group, project and instruction examples
+examples/   config, host, group, project, instruction and agent-default examples
+tests/      unit tests (python3 -m unittest discover -s tests)
+docs/       roadmap
 shell/      bash, zsh and fish integration
 net/        egress rules        templates/   agent context file
 config/     Podman entry for gVisor

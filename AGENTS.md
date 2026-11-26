@@ -63,7 +63,7 @@ the user**. A mistake here can weaken the sandbox for every project. Be conserva
 
 ## Before you commit
 
-- `shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash`
+- `shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash examples/agents/*/*.sh`
 - `python3 -m py_compile lib/*.py`, and the tests in `tests/` if the change touches them.
 - `scripts/agentbox-check.sh` and `scripts/agentbox-check.sh --runtime crun` on a real
   host when the change affects containers, mounts, network, caps or git handling. Add a

@@ -10,7 +10,7 @@ jobs:
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y shellcheck zsh fish nftables
       - name: shellcheck
-        run: shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash
+        run: shellcheck -x -S warning -e SC1091,SC2207 bin/* scripts/*.sh lib/common.sh images/*/setup.sh shell/agentbox.bash examples/agents/*/*.sh
       - name: Python
         run: python3 -m py_compile lib/*.py
       - name: Unit tests

@@ -157,7 +157,7 @@ for either name exists and never stops one; refuses if any target exists. Each m
 rename that never copies or overwrites (no traversal inside agent-writable folders). The
 old slice file is left for item 15. Moving between folders needs no command.
 
-### [ ] 8. Release 0.2.0
+### [~] 8. Release 0.2.0
 
 README (layout, groups, env, include, rename), CHANGELOG, examples; beta tag, test on the
 laptop, then `v0.2.0`.

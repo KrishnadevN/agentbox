@@ -1,6 +1,7 @@
 # agentbox package defaults. Do not edit for personal settings: override them in
-# ~/.config/agentbox/config.toml (all machines), hosts/<hostname>.toml (one machine)
-# and projects/<project>.toml (one project), same keys. CLI options win over all.
+# ~/.config/agentbox/config.toml (all machines), hosts/<hostname>.toml (one machine),
+# groups/<folder>/.../group.toml (projects below a folder of ~/Projects) and
+# projects/<project>.toml (one project), same keys. CLI options win over all.
 # Examples: examples/ in this package.
 
 [resources]
@@ -9,7 +10,8 @@ reserve_mem_gib_min = 16     # reserve at least this much RAM ...
 reserve_mem_pct     = 20     # ... or this % of RAM, whichever is larger
 reserve_threads     = 4      # CPU threads kept free for the host
 memory_high_pct     = 90     # throttle at 90 % of the cap, kill at 100 %
-tasks_max           = 16384  # host tasks (crun only; see README for runsc)
+tasks_max           = 16384  # TasksMax of agents.slice: host processes and threads
+                             # of all sandboxes (gVisor's inner processes are not host tasks)
 threads_per_job     = 0      # OMP/BLAS threads per process; 0 = all allowed CPUs
 
 [runtime]
@@ -32,6 +34,8 @@ dns  = ["169.254.1.1"]
 #   groups/<folder>/.../group.md                  -> added for projects below that folder
 #   project-instructions/<project>.md             -> added for that project only
 #   skills/<name>/SKILL.md                        -> each agent's personal skills folder
+#   agents/<agent>/                               -> copied into each project's config
+#                                                    folder of that agent when missing
 #   projects/<project>/                           -> /work/.agentbox in that project
 project_files = true         # mount projects/<project>/ writable at /work/.agentbox and
                              # link its entries (AGENTS.md, .claude/, ...) into /work

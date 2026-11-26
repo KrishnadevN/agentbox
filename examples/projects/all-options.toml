@@ -33,6 +33,11 @@
 # reserve_mem_gib_min, reserve_mem_pct, reserve_threads, memory_high_pct, tasks_max:
 #   GLOBAL settings, ignored here. Set them in hosts/<host>.toml.
 
+[context]
+# project_files = true      # ~/.agents-context/projects/<project>/ at /work/.agentbox
+# skills = "ro"             # shared skills: ro | rw | off
+# instructions = []         # modules from ~/.agents-context/instructions/, e.g. ["latex"]
+
 [tools]
 # update_max_age_hours = 12 # update agent CLIs before launch if older (0 = every launch)
 
