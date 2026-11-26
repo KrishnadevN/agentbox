@@ -289,14 +289,33 @@ copy, created inside the sandbox so paths match. Only if parallel agents become 
 
 ---
 
+### [ ] 24. API keys, other model providers and more agent CLIs
+
+- Credential files per agent: `auth/<agent>.env` reaches only that agent's container
+  with `--env-file` (as `claude.env` and `copilot.env` do today), for API keys
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...) and provider settings, e.g. Claude Code on
+  Amazon Bedrock (`CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, AWS credentials) or Vertex
+  AI. Their names are reserved in `[project] env`. Decide in the plan whether a project
+  can choose other credentials than the global ones.
+- More agent CLIs, verified at the time (e.g. OpenCode, Pi): install and update in
+  `agentbox-update-tools`, a config folder per project, an instruction file, an entry in
+  the known agents.
+- README: keys and cloud credentials spend money and an agent can read and use them
+  outside its CLI; recommend scoped, limited keys (provider spend limits; an AWS policy
+  that only allows model invocation, short-lived credentials). Cloud CLI folders
+  (`~/.aws`, ...) are never mounted.
+
+Acceptance: check suite — an env file reaches only its agent; README section per
+provider.
+
 ## Even later
 
-### [ ] 24. Network allowlist and logging (opt-in)
+### [ ] 25. Network allowlist and logging (opt-in)
 
 A small egress proxy per pod: deny by default with a per-project domain list, and a log
 of allowed destinations. Breaks free web search unless domains are allowed.
 
-### [ ] 25. Nested containers (experiment, gVisor only)
+### [ ] 26. Nested containers (experiment, gVisor only)
 
 A layer with podman/buildah/fuse-overlayfs; capabilities only for that project's runsc
 containers (inside gVisor they apply to the user-space kernel, not the host); image storage
