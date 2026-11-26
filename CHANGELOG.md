@@ -3,6 +3,11 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org);
 before 1.0, minor versions may change the configuration format.
 
+## Unreleased
+
+- Base image: `bubblewrap` and `socat` added, because agent CLIs check for them at
+  startup. They stay unused: agentbox itself is the sandbox. Rebuild with `agentbox-build`.
+
 ## 0.1.1 — 2026-11-25
 
 - Fix: DNS now goes through Podman's pasta forwarder (169.254.1.1) to the host's own

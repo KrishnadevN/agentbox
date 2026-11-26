@@ -4,6 +4,7 @@ ripgrep fd-find jq tree bc patch diffutils rsync shellcheck sqlite3 xxd bsdextra
 iproute2 dnsutils netcat-openbsd
 ncurses-term kitty-terminfo          # terminfo for kitty, alacritty and others
 python3                              # used by setup scripts and many agent tools
+bubblewrap socat                     # agent CLIs check for them at startup; unused (agentbox is the sandbox)
 
 # Archives
 zip unzip p7zip-full xz-utils zstd
