@@ -200,7 +200,10 @@ optional Claude token below) is shared.
   Or write the file by hand: one line `CLAUDE_CODE_OAUTH_TOKEN=<token>`, no quotes, no
   `export`, and `chmod 600` it.
   Only the claude containers receive it, and it takes precedence over a `/login` in a
-  project. It lasts up to a year; revoke it in your claude.ai settings. After adding,
+  project. It uses your subscription, like `/login`, but can only make model requests:
+  claude.ai connectors and Remote Control are not available with it (`/login` in a
+  session switches that session back). It lasts up to a year; revoke it in your
+  claude.ai settings. After adding,
   replacing or removing the file, restart running projects (`agentbox <project>
   restart`): until then they keep the old token, even a removed one. Codex and
   Antigravity have no such token for personal plans; log in once per project.
