@@ -17,7 +17,7 @@ end
 
 # --- completion -------------------------------------------------------------
 complete -c agentbox -f
-complete -c agentbox -n 'test (count (commandline -opc)) -eq 1' -a '(__agentbox_projects) list down-all'
+complete -c agentbox -n 'test (count (commandline -opc)) -eq 1' -a '(__agentbox_projects) list down-all rename'
 complete -c agentbox -n 'test (count (commandline -opc)) -eq 2' \
     -a 'claude codex agy copilot shell up down restart status blocked fetch sync'
 complete -c agentbox -n 'test (count (commandline -opc)) -eq 3; and __fish_seen_subcommand_from shell' \

@@ -336,6 +336,32 @@ CLI's settings if you don't want it.
 `~/.agents-context` is just a folder. Make it a private git repository if you want to
 sync it between machines; never make it public, since it holds your private notes.
 
+## Moving or renaming a project
+
+**Moving** a repository to another folder of `~/Projects` (say from `research/` to
+`teaching/`) needs no command: agentbox keeps everything under the project's name and
+finds the folder anew on every call. The settings and instructions of the new folders
+apply from the next start; `agentbox <project> restart` applies them to a running pod.
+
+**Renaming** (for example a placeholder to `JournalName2027`):
+
+1. `agentbox-down <old>`
+2. rename the repository folder (you can move it at the same time)
+3. `agentbox rename <old> <new>`
+4. `agentbox <new>`
+
+`agentbox rename` moves the agents' copy, the bridge, each agent's login and
+conversations, the private project files and instructions, and
+`~/.config/agentbox/projects/<old>.toml`, and points your repository's `agent` remote
+to the new copy. It changes nothing if a pod for either name exists (stop it with
+`agentbox-down <name>`), if any target already exists, if git cannot run, or if a name
+cannot be used; don't start either name until it has finished.
+It does not update references to the old name in other files (`project:<old>`,
+`agents:<old>`), and it leaves the old systemd slice file in
+`~/.config/systemd/user/`, which is harmless. Project names may use letters, digits,
+`_`, `.` and `-` (not first), and a few words are reserved for agentbox commands; such
+folders get an error that says so.
+
 ## Configuration
 
 Settings are TOML files, read in this order (later ones win, command-line options win

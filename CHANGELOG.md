@@ -5,6 +5,11 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- `agentbox rename <old> <new>` moves a project's agentbox state (agent copy, bridge,
+  logins and conversations, private files, config) after you rename its repository
+  folder, and updates the `agent` remote. Moving a repository to another folder of
+  `~/Projects` needs no command. Project folders whose name cannot be a pod name (for
+  example with spaces) or is reserved for an agentbox command now get a clear error.
 - Shared agent defaults: files in `~/.agents-context/agents/<agent>/` are copied into
   each project's agent config folder when missing (never replacing a file), e.g. a
   Claude status line; `codex/config.toml` becomes Codex's system config. Optional shared

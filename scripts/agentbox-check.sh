@@ -46,6 +46,7 @@ GI2=$AB_CONTEXT/groups/$CAT2 PI2=$AB_CONTEXT/project-instructions/$P2.md   # its
 GC2=$AB_CONFIG/groups/$CAT2                                                # its folder config (env)
 DC=$AB_CONTEXT/agents/claude DX=$AB_CONTEXT/agents/codex CE=$AB_STATE/auth/claude.env  # shared defaults
 DSUB=$DC/ab-selftest-$RUNID                                                # claude defaults fixture
+P2R=$P2-renamed W2R=$AB_AGENTS/$P2-renamed                                 # project 2 after `agentbox rename`
 MADE2=0 MADEL=0 MADEGD=0 MADEPD=0 MADECG=0 MADEAG=0 MADEDC=0 MADEDX=0 MADEXC=0 MADECE=0
 DATA=$HOME/agentbox-selftest-data SECRET=$HOME/.agentbox-selftest-secret
 cx() { local c=$1; shift; podman exec "$POD-$c" bash -c "$*"; }   # run in a container
@@ -114,6 +115,9 @@ cleanup() {
     podman unshare rm -rf "$W2" "$AB_STATE/home/$P2" 2>/dev/null
     rm -rf "${AB_PROJECTS:?}/$CAT2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" "$AB_CONTEXT/projects/$P2" \
       "$GI2" "$PI2"
+    podman unshare rm -rf "$W2R" "$AB_STATE/home/$P2R" 2>/dev/null
+    rm -rf "$AB_STATE/bridge/$P2R.git" "$AB_STATE/ctx/$P2R" "$AB_CONTEXT/projects/$P2R" \
+      "$AB_CONTEXT/project-instructions/$P2R.md"
     ((MADEGD)) && rmdir "$AB_CONTEXT/groups" 2>/dev/null
     ((MADEPD)) && rmdir "$AB_CONTEXT/project-instructions" 2>/dev/null
     rm -f "$GC2/group.toml"; rmdir "$GC2" 2>/dev/null
@@ -205,6 +209,8 @@ mk_defaults() {
 }
 if ! fixture_free "$AB_PROJECTS/$CAT2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
      "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" "$GI2" "$PI2" "$GC2" "$DSUB" \
+     "$W2R" "$AB_STATE/home/$P2R" "$AB_STATE/bridge/$P2R.git" "$AB_STATE/ctx/$P2R" "$AB_CONTEXT/projects/$P2R" \
+     "$AB_CONTEXT/project-instructions/$P2R.md" "$AB_CONFIG/projects/$P2R.toml" \
    || podman pod exists "$POD2"; then
   fail "fixture $P2 already exists; not touching it"
 elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "selftest-folder-instr" > "$GI2/group.md" \
@@ -278,6 +284,31 @@ elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "self
     for c in codex dev; do
       expect "claude.env token does not reach $c" podman exec "$POD2-$c" bash -c 'test -z "${CLAUDE_CODE_OAUTH_TOKEN:-}"'
     done
+  fi
+  # agentbox rename: refused while the pod exists; after agentbox-down and a folder rename it
+  # moves the state and repoints the trusted repo's agent remote.
+  if out=$("$B/agentbox" rename "$P2" "$P2R" 2>&1); then
+    fail "rename succeeded while pod $POD2 exists"
+  elif [[ $out == *"agentbox-down $P2"* && -d $W2 && ! -e $W2R && ! -L $W2R ]]; then
+    pass "rename refused while the pod exists; nothing moved"
+  else
+    fail "rename while the pod exists: unexpected result: $out"
+  fi
+  if "$B/agentbox-down" "$P2" >/dev/null && mv -T "$S2" "$AB_PROJECTS/$CAT2/$P2R" \
+     && "$B/agentbox" rename "$P2" "$P2R" >/dev/null; then
+    pass "rename after agentbox-down and a folder rename"
+    moved=("$W2" "$W2R" "$AB_STATE/home/$P2" "$AB_STATE/home/$P2R"
+           "$AB_STATE/bridge/$P2.git" "$AB_STATE/bridge/$P2R.git"
+           "$AB_CONTEXT/projects/$P2" "$AB_CONTEXT/projects/$P2R"
+           "$PI2" "$AB_CONTEXT/project-instructions/$P2R.md")
+    for ((i = 0; i < ${#moved[@]}; i += 2)); do
+      o=${moved[i]} n=${moved[i+1]}
+      [[ -e $n && ! -e $o && ! -L $o ]] && pass "renamed: ${n#"$HOME"/}" || fail "not renamed: $o -> $n"
+    done
+    [[ $(git -C "$AB_PROJECTS/$CAT2/$P2R" remote get-url agent) == "$W2R" ]] \
+      && pass "trusted repo's agent remote points to the renamed copy" || fail "agent remote not updated"
+  else
+    fail "rename after agentbox-down failed"
   fi
 else
   fail "second project failed to start"

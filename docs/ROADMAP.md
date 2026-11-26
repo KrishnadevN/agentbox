@@ -147,13 +147,15 @@ Acceptance: check suite — a default file appears in a new project; an existing
 kept unchanged; with `claude.env`, the token reaches only the claude container. README
 section.
 
-### [ ] 7. `agentbox rename <old> <new>`
+### [x] 7. `agentbox rename <old> <new>`
 
-For renames like a placeholder → `JournalName2027`. The user renames the repo folder first;
-then this command moves `~/.agents-projects/<old>`, the bridge, `ctx/`, `home/`,
-`~/.agents-context/projects/<old>`, `projects/<old>.toml`, the slice file, and updates the
-trusted repo's `agent` remote. Refuses while the pod runs. Host-side moves of
-agent-writable folders: rename the top folder only (no traversal inside).
+For renames like a placeholder → `JournalName2027`. With the pod removed, the user renames
+the repo folder first; then this command moves `~/.agents-projects/<old>`, the bridge,
+`ctx/`, `home/`, `~/.agents-context/projects/<old>`, `project-instructions/<old>.md`,
+`projects/<old>.toml`, and updates the trusted repo's `agent` remote. Refuses while a pod
+for either name exists and never stops one; refuses if any target exists. Each move is one
+rename that never copies or overwrites (no traversal inside agent-writable folders). The
+old slice file is left for item 15. Moving between folders needs no command.
 
 ### [ ] 8. Release 0.2.0
 

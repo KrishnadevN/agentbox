@@ -18,7 +18,7 @@ _agentbox() {
   esac
   if [[ $PREFIX == -* ]]; then compadd -- --runtime --mem --cpus --ro --offline --no-update; return; fi
   case $CURRENT in
-    2) compadd -- $(__ab_projects) list down-all ;;
+    2) compadd -- $(__ab_projects) list down-all rename ;;
     3) compadd -- claude codex agy copilot shell up down restart status blocked fetch sync ;;
     4) [[ $words[3] == shell ]] && compadd -- dev claude codex agy copilot ;;
   esac

@@ -4,6 +4,7 @@
 #   agentbox <project> [action] [options]
 #   agentbox list [category|group] [--tag TAG]   your projects as a tree
 #   agentbox down-all  stop every agentbox pod
+#   agentbox rename <old> <new>   after renaming the repo folder (pod removed first)
 #
 # actions:
 #   (none)            open a shell in the dev container     (v2: tmux layout)
@@ -18,7 +19,7 @@ set -euo pipefail
 B=$(dirname "$(readlink -f "$0")")
 source "$B/../lib/common.sh"
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 [[ $# -ge 1 ]] || usage 1
 case $1 in
   -h|--help) usage ;;
@@ -30,6 +31,7 @@ if [[ $1 == down-all ]]; then
   exit 0
 fi
 if [[ $1 == list ]]; then shift; exec python3 "$AB_LIB/projects.py" list "$@"; fi
+if [[ $1 == rename ]]; then shift; exec python3 "$AB_LIB/rename.py" "$@"; fi
 if [[ $1 == __projects ]]; then exec python3 "$AB_LIB/projects.py" names; fi   # completion
 
 p=$1; shift

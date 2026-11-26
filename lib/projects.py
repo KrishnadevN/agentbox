@@ -14,7 +14,7 @@ that resolves into agentbox's own or agent-writable trees ($AB_AGENTS, $AB_STATE
 $AB_CONTEXT) is used, a simple guard against mistakes (see AGENTS.md, invariant 8).
 The name is the folder's basename; two repos with one name are an error.
 """
-import os, stat, subprocess, sys, tomllib
+import os, re, stat, subprocess, sys, tomllib
 from typing import NamedTuple
 
 HOME = os.path.expanduser("~")
@@ -25,6 +25,17 @@ EXCLUDE = [os.environ.get("AB_AGENTS", f"{HOME}/.agents-projects"),
            os.environ.get("AB_STATE", f"{HOME}/.local/share/agentbox"),
            os.environ.get("AB_CONTEXT", f"{HOME}/.agents-context")]
 MAX_DEPTH = 4
+RESERVED_NAMES = ("list", "down-all", "rename", "__projects")   # words `agentbox` intercepts
+
+
+def name_problem(name):
+    """Why a project cannot use this name, or None. The pod is ab-<name> (Podman's rule)."""
+    if name in RESERVED_NAMES:
+        return f"{name!r} is in RESERVED_NAMES (lib/projects.py): rename the folder"
+    if not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.-]*", name):
+        return (f"{name!r} cannot be a project name (letters, digits, _ . - only; "
+                f"not starting with . or -): rename the folder")
+    return None
 
 
 class Project(NamedTuple):
@@ -103,6 +114,9 @@ def lookup(name, found=None, root=ROOT):
                       + "\n  ".join(dups[name]))
     if name not in projects:
         return None, f"no such project: {name} (looked in {root}, up to {MAX_DEPTH} levels deep)"
+    problem = name_problem(name)
+    if problem:
+        return None, problem
     return projects[name], None
 
 

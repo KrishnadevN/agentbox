@@ -22,7 +22,7 @@ _agentbox() {
     mapfile -t COMPREPLY < <(compgen -W '--runtime --mem --cpus --ro --offline --no-update' -- "$cur"); return
   fi
   case $COMP_CWORD in
-    1) mapfile -t COMPREPLY < <(compgen -W "$(__ab_projects) list down-all" -- "$cur") ;;
+    1) mapfile -t COMPREPLY < <(compgen -W "$(__ab_projects) list down-all rename" -- "$cur") ;;
     2) mapfile -t COMPREPLY < <(compgen -W 'claude codex agy copilot shell up down restart status blocked fetch sync' -- "$cur") ;;
     3) [[ $prev == shell ]] && mapfile -t COMPREPLY < <(compgen -W 'dev claude codex agy copilot' -- "$cur") ;;
   esac
