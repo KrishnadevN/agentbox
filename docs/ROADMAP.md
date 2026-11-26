@@ -32,7 +32,7 @@ Design:
   symlinks (same rule as the instruction files).
 - One-time migration is not needed (old mixed history stays in the shared folder); say so
   in the CHANGELOG and suggest deleting it.
-- Afterwards `/resume` and `--continue` (item 8) only see the current project's sessions.
+- Afterwards `/resume` and `--continue` (item 9) only see the current project's sessions.
 
 Acceptance: check suite — a file written to the session folder in project A is not visible
 in project B's container; the login file is still shared.
@@ -130,12 +130,34 @@ laptop, then `v0.2.0`.
 
 ## 0.3.0 — Agent workflow (medium)
 
-### [ ] 8. Pass arguments to the agent
+### [ ] 8. Documentation site and a shorter README
+
+- Markdown sources in `docs/`, published to GitHub Pages by a GitHub Actions workflow.
+  Choose a static site generator with few dependencies; verify that it is actively
+  maintained at the time (candidates: MkDocs with Material, Zensical) and say in the
+  commit why you chose it.
+- Pages: getting started; how it works and the security model (including what agentbox
+  does not protect); daily workflow (below); configuration reference (all files, merge
+  order, every option); image layers; agent context and instructions (where each file
+  goes, what loads automatically); logins per agent; troubleshooting; maintenance and
+  updating; developing agentbox (link `AGENTS.md` and the roadmap).
+- The daily workflow page covers: start agents; `agentbox <p> fetch`; review (`git log` /
+  `git diff` against `agent/*`); merge; sign agent commits before pushing with
+  `git rebase --force-rebase -S origin/main` and check with `git log --show-signature`;
+  push; `agentbox <p> sync`; agents then run `git fetch upstream && git rebase
+  upstream/main` (signing changes commit IDs, and the rebase drops the duplicates).
+- README: what it is, why, a short quick start, the warning box, alternatives, license,
+  and links to the docs. Everything else moves to the docs.
+
+Acceptance: the site builds in CI on every push and deploys from `main`; README links
+work; no content is lost in the move.
+
+### [ ] 9. Pass arguments to the agent
 
 `agentbox <p> claude -- --continue` → everything after `--` is appended to the agent
 command. Same for `codex`, `agy`, `copilot`.
 
-### [ ] 9. Handoff folder and review-workflow instructions
+### [ ] 10. Handoff folder and review-workflow instructions
 
 - Create `/work/.agentbox/handoff/` (inside the private project folder); mention it in the
   context template.
@@ -152,7 +174,7 @@ command. Same for `codex`, `agy`, `copilot`.
   - commit trailers in one final paragraph: `Implemented-by:`, `Reviewed-by:`,
     `Co-authored-by:`; agents report their own current model name.
 
-### [ ] 10. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
+### [ ] 11. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
 
 - New config per agent: `headless` and `headless_resume` command lists.
   Defaults to verify: Claude `claude -p --dangerously-skip-permissions` (+ `--continue`);
@@ -161,18 +183,18 @@ command. Same for `codex`, `agy`, `copilot`.
 - Runs in the agent's own container (`podman exec` without TTY), output also appended to
   `/work/.agentbox/handoff/run-<agent>.log`.
 
-### [ ] 11. `agentbox <p> review [branch]`
+### [ ] 12. `agentbox <p> review [branch]`
 
 Fetch, then in the trusted repo: commit list and `diff --stat` of `agent/<branch>` against
 the default branch (detect `main`/`master`). Read-only; merging stays manual.
 
-### [ ] 12. Notifications
+### [ ] 13. Notifications
 
 Defaults written by prep into the sandbox login folders (only if not set): Claude terminal
 bell, Codex terminal notifications (verify setting names). README: kitty shows them; in
 tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets.
 
-### [ ] 13. `agentbox doctor` and `agentbox clean <p>`
+### [ ] 14. `agentbox doctor` and `agentbox clean <p>`
 
 - `doctor`: versions (agentbox, podman, runsc, CLIs), paths agentbox writes outside the
   package with sizes, stale slices/pods/state for projects that no longer exist, Podman
@@ -181,19 +203,19 @@ tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets
   `home/`, slice file (asks first; never touches `~/Projects`, never touches
   `~/.agents-context` without `--context`).
 
-### [ ] 14. Image name prefix for development
+### [ ] 15. Image name prefix for development
 
 `AB_IMAGE_PREFIX` (default `sbx`) used by `images.py`, `cfg.py`, `agentbox-update-tools`, so
 a development checkout can build and test `localhost/sbxdev-*` without replacing the images
 real projects use.
 
-### [ ] 15. Release 0.3.0
+### [ ] 16. Release 0.3.0
 
 ---
 
 ## 0.4.0 — Workstation and tmux (low)
 
-### [ ] 16. Fedora Atomic (Kinoite/Silverblue) support in prep
+### [ ] 17. Fedora Atomic (Kinoite/Silverblue) support in prep
 
 - Detect rpm-ostree; Podman is preinstalled; install missing pieces by layering only if
   needed; gVisor tarball into `/usr/local/bin` (writable on ostree).
@@ -201,32 +223,32 @@ real projects use.
   Verify how runsc handles labels; `setsebool -P container_use_devices=true` for GPU.
 - Check suite must pass on Kinoite.
 
-### [ ] 17. NVIDIA GPU tier
+### [ ] 18. NVIDIA GPU tier
 
 Host `gpu = "nvidia-cdi"`; project `gpu = "optional" | "required"`. With a GPU: `crun` +
 `--device nvidia.com/gpu=all` for the containers that need it (runsc + nvproxy stays an
 experiment). Optional `cuda` layer for `nvcc`. Check: `nvidia-smi` and
 `torch.cuda.is_available()` in the container; CPU fallback on hosts without GPU.
 
-### [ ] 18. tmux layout
+### [ ] 19. tmux layout
 
 `agentbox <p>` (no action) opens or re-attaches tmux session `ab-<p>`: window `host`
 (trusted repo folder, plain host shell), one window per agent, `dev`. `monitor-activity`
 on agent windows. Scripts never `send-keys` agent-written content.
 
-### [ ] 19. Release 0.4.0
+### [ ] 20. Release 0.4.0
 
 ---
 
 ## Later (lower)
 
-### [ ] 20. `agentbox <p> loop` — automated implement/review rounds
+### [ ] 21. `agentbox <p> loop` — automated implement/review rounds
 
-Host-side, after the protocol of item 9 has worked manually for a while. Reads `STATUS.md`
+Host-side, after the protocol of item 10 has worked manually for a while. Reads `STATUS.md`
 strictly (allowed values only, size cap), sends only fixed prompts via `run --resume`,
 stops at `approved-by-agents`, `needs-human` or the round limit.
 
-### [ ] 21. Per-agent worktrees (opt-in)
+### [ ] 22. Per-agent worktrees (opt-in)
 
 `worktrees = true`: each agent container gets its own git worktree/branch of the agent
 copy, created inside the sandbox so paths match. Only if parallel agents become common.
@@ -235,12 +257,12 @@ copy, created inside the sandbox so paths match. Only if parallel agents become 
 
 ## Even later
 
-### [ ] 22. Network allowlist and logging (opt-in)
+### [ ] 23. Network allowlist and logging (opt-in)
 
 A small egress proxy per pod: deny by default with a per-project domain list, and a log
 of allowed destinations. Breaks free web search unless domains are allowed.
 
-### [ ] 23. Nested containers (experiment, gVisor only)
+### [ ] 24. Nested containers (experiment, gVisor only)
 
 A layer with podman/buildah/fuse-overlayfs; capabilities only for that project's runsc
 containers (inside gVisor they apply to the user-space kernel, not the host); image storage
