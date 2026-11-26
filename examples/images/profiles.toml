@@ -1,0 +1,7 @@
+# Copy to ~/.config/agentbox/images/profiles.toml (or add these lines to yours).
+# A layer for projects that need web tooling AND docs tooling: it builds on `web` and
+# also applies the parts of `docs` (Typst, fonts; TeX Live is mounted for it too).
+# Build: agentbox-build webdocs     Use: profile = "webdocs" in projects/<name>.toml
+[webdocs]
+parent  = "web"
+include = ["docs"]

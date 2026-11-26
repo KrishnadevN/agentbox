@@ -5,6 +5,12 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- Image layers can `include` other layers: their own parts are applied before the
+  layer's own, e.g. `[webdocs] parent = "web"`, `include = ["docs"]` (see
+  `examples/images/profiles.toml`). Layers that use `docs` get TeX Live mounted; the
+  mounted folder now goes through the usual mount checks, so a TeX Live directly in your
+  home folder is refused instead of exposing all of `$HOME`. Setup scripts keep their
+  order with ten or more parts.
 - Projects can live in subfolders of `~/Projects`, up to four levels deep (for example
   `research/Survey/Survey-paper`). The name is still the repository's folder name; two
   repositories with the same name are refused until one is renamed. `agentbox list`

@@ -11,6 +11,9 @@
 # ~/.config/agentbox/images/profiles.toml, e.g.:
 #   [julia]
 #   parent = "python"
+# A layer can also take other layers' own parts (not their parents) with
+#   include = ["docs"]
+# applied in dependency order before its own parts; a part is never applied twice.
 # Each layer becomes the image localhost/sbx-<name>:latest; use it as `profile`.
 
 [base]

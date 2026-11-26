@@ -19,7 +19,8 @@ while IFS=$'\t' read -r name parent dirs; do
     i=$((i + 1)); ab_step "using $d"
     [[ -f $d/packages.txt ]] && { cat "$d/packages.txt"; echo; } >> "$L/packages.txt"
     [[ -d $d/files ]] && cp -a "$d/files/." "$L/files/"
-    [[ -f $d/setup.sh ]] && cp "$d/setup.sh" "$L/setup.d/$i-setup.sh"
+    # zero-padded: the Containerfile runs setup.d/*.sh in glob order
+    [[ -f $d/setup.sh ]] && cp "$d/setup.sh" "$L/setup.d/$(printf '%03d' "$i")-setup.sh"
     if [[ -f $d/env.txt ]]; then
       while IFS= read -r line; do
         line=${line%%#*}; line=${line%"${line##*[![:space:]]}"}

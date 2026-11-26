@@ -106,7 +106,7 @@ list.
 Acceptance: config tests; check suite case that an env var arrives and an `agents:` mount
 is read-only.
 
-### [ ] 5. Layer `include`
+### [x] 5. Layer `include`
 
 - `images/profiles.toml` (and the user's) may set `include = ["docs", ...]` on a layer.
   The build copies the included layers' own parts (packages, files, setup, env — not their

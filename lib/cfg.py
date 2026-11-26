@@ -202,11 +202,13 @@ def main():
             mounts += ["-v", f"{real}:{dst}:ro"]
 
     tex = hst.get("tex_root", "")
-    if profile == "docs":
+    if _images.uses(_images.profiles(), profile, "docs"):   # docs as parent or include
         if tex and os.path.isdir(tex):
-            mounts += ["-v", f"{os.path.dirname(tex)}:{os.path.dirname(tex)}:ro"]
+            tex = os.path.realpath(tex)     # TEX_ROOT must exist at the same path inside
+            texsrc = check_mount(os.path.dirname(tex))   # the folder actually mounted
+            mounts += ["-v", f"{texsrc}:{texsrc}:ro"]
         else:
-            warn(f"profile docs: TeX Live not found at tex_root={tex!r}; LaTeX will be missing "
+            warn(f"profile {profile}: TeX Live not found at tex_root={tex!r}; LaTeX will be missing "
                  f"(run scripts/agentbox-install-texlive.sh, then set tex_root in {CONFIG}/hosts/{host}.toml)")
             tex = ""
 

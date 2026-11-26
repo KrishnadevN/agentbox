@@ -334,9 +334,21 @@ You can extend this without touching the package. In `~/.config/agentbox/images/
   parent = "python"
   ```
   Build it with `agentbox-build julia` and use it with `profile = "julia"`.
+- A layer can also take the parts of other layers without building on them, with
+  `include`. For a project that needs both web and docs tools:
+  ```toml
+  [webdocs]
+  parent = "web"
+  include = ["docs"]
+  ```
+  The included layers' own parts (not their parents) are applied first, in order, then
+  the layer's own. A layer's parts are never applied twice in one image: including
+  something the parent image already has is an error. Included parts are stored again
+  in this image, so it is larger than one built on top. Layers that use `docs`, as
+  parent or include, get TeX Live mounted. See `examples/images/profiles.toml`.
 
-After changing a layer, rebuild it and the layers on top of it (`agentbox-build` alone
-rebuilds everything).
+After changing a layer, rebuild it, the layers on top of it and the layers that include
+it (`agentbox-build` alone rebuilds everything).
 
 ## What agentbox does not protect
 
