@@ -37,6 +37,12 @@ the user**. A mistake here can weaken the sandbox for every project. Be conserva
    only lower privileges. Mounts, ports and runtime come only from `~/.config/agentbox`.
 7. Resource caps come from the systemd slice; every `podman` call that starts processes
    runs through `ab_scoped` so conmon/pasta/runsc stay in the slice.
+8. **Trust boundary.** The layout of `~/Projects` (folders, `.git`, symlinks) and the
+   user's own configuration (git, shell, `~/.config/agentbox`) are created by the user
+   and trusted; agents cannot write there. Untrusted are repository *contents* (agents'
+   commits reach them through merges) and everything agents can write (invariant 3).
+   Host-side checks defend against agents, not against the user's own setup; guards for
+   user mistakes stay simple.
 
 ## Hard-won facts (do not "simplify" these away)
 
