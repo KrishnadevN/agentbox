@@ -73,13 +73,21 @@ Acceptance:
 - Merge order becomes: package defaults < `config.toml` < `hosts/<host>.toml` <
   `groups/<category>.toml` < `groups/<group>.toml` < `projects/<name>.toml` < hint < CLI.
 - Group instructions: append `~/.agents-context/groups/<category>.md` and
-  `~/.agents-context/groups/<group>.md` (if present) to each agent's context file, after
-  `instructions/all.md` and `instructions/<agent>.md`.
+  `~/.agents-context/groups/<group>.md` (if present) to each agent's context file.
+- Instruction modules: `instructions = ["name", ...]` in project or group config appends
+  `~/.agents-context/instructions/<name>.md` after `all.md` and `<agent>.md`, before the
+  group and project files. Unknown names: warn and skip. Names are plain file names (no
+  `/`, no leading `.`), so a module cannot point outside `instructions/`.
+- Private project instructions: append `~/.agents-context/projects/<project>.md` (a file
+  next to the writable project folder, so agents cannot change it) after the group files.
+- The final order of the context file: sandbox facts, `all.md`, `<agent>.md`, modules,
+  `groups/<category>.md`, `groups/<group>.md`, `projects/<project>.md`.
 - Same rule as for projects: the global cap (`[resources] reserve_*`) is ignored in group
   files, with a warning.
 
-Acceptance: example files in `examples/groups/`; README section; a cfg.py test for the
-merge order.
+Acceptance: example files in `examples/groups/` and an example module in
+`examples/instructions/`; README section; cfg.py tests for the merge order and the module
+list.
 
 ### [ ] 4. Per-project environment and project references
 
