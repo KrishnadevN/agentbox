@@ -190,11 +190,15 @@ optional Claude token below) is shared.
 - **Claude Code:** start it, type `/login`, open the link on your machine, paste the code.
   To log in once for all projects instead, create a long-lived token with
   `claude setup-token` (on any machine with Claude Code) and save it, readable only by
-  you and without the token in your shell history (bash; paste it at the prompt):
+  you and without the token in your shell history (works from bash, zsh and fish; paste
+  the token at the prompt):
   ```
-  (umask 077; read -rsp 'Token: ' t && echo && [ -n "$t" ] &&
-   printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$t" > ~/.local/share/agentbox/auth/claude.env)
+  bash -c 'umask 077; f=~/.local/share/agentbox/auth/claude.env
+    read -rsp "Token: " t && echo && [ -n "$t" ] &&
+    printf "CLAUDE_CODE_OAUTH_TOKEN=%s\n" "$t" > "$f" && chmod 600 "$f"'
   ```
+  Or write the file by hand: one line `CLAUDE_CODE_OAUTH_TOKEN=<token>`, no quotes, no
+  `export`, and `chmod 600` it.
   Only the claude containers receive it, and it takes precedence over a `/login` in a
   project. It lasts up to a year; revoke it in your claude.ai settings. After adding,
   replacing or removing the file, restart running projects (`agentbox <project>
@@ -206,10 +210,11 @@ optional Claude token below) is shared.
 - **Antigravity:** start it, open the link, paste the code.
 - **Copilot:** do not use `/login`. That token can also act on your repositories, so an
   agent could push with it. Instead, create a fine-grained token on your personal
-  account with only the **Copilot Requests** permission, and save it:
+  account with only the **Copilot Requests** permission, and save it the same way:
   ```
-  printf 'COPILOT_GITHUB_TOKEN=%s\n' 'github_pat_...' > ~/.local/share/agentbox/auth/copilot.env
-  chmod 600 ~/.local/share/agentbox/auth/copilot.env
+  bash -c 'umask 077; f=~/.local/share/agentbox/auth/copilot.env
+    read -rsp "Token: " t && echo && [ -n "$t" ] &&
+    printf "COPILOT_GITHUB_TOKEN=%s\n" "$t" > "$f" && chmod 600 "$f"'
   ```
   Only the copilot container receives it.
 
