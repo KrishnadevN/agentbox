@@ -5,6 +5,13 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- Settings and instructions per folder of `~/Projects`: `~/.config/agentbox/groups/<folder>/group.toml`
+  applies to every project below that folder (nested folders mirror `~/Projects`, outer
+  first), and `~/.agents-context/groups/<folder>/group.md` is added to their agents'
+  context. Instruction modules: `[context] instructions = ["latex"]` adds
+  `~/.agents-context/instructions/latex.md`. Private, read-only instructions for one
+  project go in `~/.agents-context/project-instructions/<project>.md`. Adding, removing
+  or editing any instruction file (including `all.md`) now shows the restart notice.
 - Image layers can `include` other layers: their own parts are applied before the
   layer's own, e.g. `[webdocs] parent = "web"`, `include = ["docs"]` (see
   `examples/images/profiles.toml`). Layers that use `docs` get TeX Live mounted; the

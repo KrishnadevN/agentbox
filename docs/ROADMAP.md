@@ -71,26 +71,32 @@ Acceptance:
   worktrees (documented in the CHANGELOG).
 - Check suite passes; CI runs the unit tests.
 
-### [ ] 3. Group configuration and group instructions
+### [x] 3. Group configuration and group instructions
 
-- Merge order becomes: package defaults < `config.toml` < `hosts/<host>.toml` <
-  `groups/<category>.toml` < `groups/<group>.toml` < `projects/<name>.toml` < hint < CLI.
-- Group instructions: append `~/.agents-context/groups/<category>.md` and
-  `~/.agents-context/groups/<group>.md` (if present) to each agent's context file.
-- Instruction modules: `instructions = ["name", ...]` in project or group config appends
-  `~/.agents-context/instructions/<name>.md` after `all.md` and `<agent>.md`, before the
-  group and project files. Unknown names: warn and skip. Names are plain file names (no
-  `/`, no leading `.`), so a module cannot point outside `instructions/`.
-- Private project instructions: append `~/.agents-context/projects/<project>.md` (a file
-  next to the writable project folder, so agents cannot change it) after the group files.
-- The final order of the context file: sandbox facts, `all.md`, `<agent>.md`, modules,
-  `groups/<category>.md`, `groups/<group>.md`, `projects/<project>.md`.
-- Same rule as for projects: the global cap (`[resources] reserve_*`) is ignored in group
-  files, with a warning.
+- Files mirror the folders above a project, each with a fixed name, so same-named folders
+  in two categories stay apart. Only a folder literally named `group.toml` or `group.md`
+  can conflict with its parent's file in the mirrored tree; agentbox then treats the
+  blocked file as absent (only regular files are read). `research/Survey/Survey-paper` reads `groups/research/group.toml`, then
+  `groups/research/Survey/group.toml`.
+- Merge order: package defaults < `config.toml` < `hosts/<host>.toml` <
+  `groups/<a>/group.toml` < `groups/<a>/<b>/group.toml` < ... < `projects/<name>.toml` <
+  hint < CLI. Group files take project keys; the global cap (`[resources] reserve_*`,
+  `memory_high_pct`, `tasks_max`) is ignored there with a warning; `tags` stay
+  project-only.
+- Folder instructions: `~/.agents-context/groups/<a>/group.md`, `.../<a>/<b>/group.md`.
+- Instruction modules: `[context] instructions = ["name", ...]`, only from trusted TOML
+  (never the hint), appends `~/.agents-context/instructions/<name>.md`. Names are plain
+  file names (no `/`, no leading `.`; not `all`, `dev` or an agent name); missing: warn
+  and skip.
+- Private project instructions: `~/.agents-context/project-instructions/<project>.md`
+  (its own folder, never mounted).
+- Context file order: sandbox facts, `all.md`, `<agent>.md`, modules, folder files outer
+  first, project file. Instruction file contents are part of the config hash, so edits
+  show the restart notice.
 
 Acceptance: example files in `examples/groups/` and an example module in
-`examples/instructions/`; README section; cfg.py tests for the merge order and the module
-list.
+`examples/instructions/`; README section; cfg.py tests for the merge order, the module
+list and the hash; a check-suite test for folder and project instructions.
 
 ### [ ] 4. Per-project environment and project references
 

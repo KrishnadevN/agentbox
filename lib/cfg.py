@@ -5,7 +5,8 @@ Usage: cfg.py <project> [--runtime runsc|crun] [--mem 32G] [--cpus N]
               [--ro PATH]... [--offline]
 
 Order (later wins): package defaults.toml -> $AB_CONFIG/config.toml ->
-$AB_CONFIG/hosts/<hostname>.toml -> $AB_CONFIG/projects/<project>.toml ->
+$AB_CONFIG/hosts/<hostname>.toml -> $AB_CONFIG/groups/<folder>/group.toml for each folder
+above the project, outer first -> $AB_CONFIG/projects/<project>.toml ->
 hint file in the project's repo (may only LOWER privileges) -> CLI options.
 $AB_CONFIG defaults to ~/.config/agentbox (your config, separate from the package).
 
@@ -20,6 +21,7 @@ CONFIG = os.environ.get("AB_CONFIG", os.path.join(os.environ.get("XDG_CONFIG_HOM
 STATE = os.environ.get("AB_STATE", f"{HOME}/.local/share/agentbox")
 PROJECTS = os.environ.get("AB_PROJECTS", f"{HOME}/Projects")
 AGENTS_DIR = os.environ.get("AB_AGENTS", f"{HOME}/.agents-projects")
+CONTEXT = os.environ.get("AB_CONTEXT", f"{HOME}/.agents-context")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import images as _images  # noqa: E402  (layer definitions: images/profiles.toml + yours)
@@ -35,6 +37,7 @@ def parse_ident(s, what):
     return name.strip(), email.strip()
 KNOWN_AGENTS = ("claude", "codex", "agy", "copilot")
 RUNTIMES = ("runsc", "crun")
+GLOBAL_RESOURCES = ("reserve_mem_gib_min", "reserve_mem_pct", "reserve_threads", "memory_high_pct", "tasks_max")
 
 # Never mount these, their parents, or anything inside them.
 PROTECTED = [f"{HOME}/{p}" for p in (
@@ -68,6 +71,32 @@ def merge(a, b):
     for k, v in (b or {}).items():
         a[k] = merge(dict(a.get(k, {})), v) if isinstance(v, dict) else v
     return a
+
+
+def layers(proj, host):
+    """Config files in merge order (later wins), before the hint and the CLI."""
+    groups = [f"{CONFIG}/groups/{'/'.join(proj.folders[:i])}/group.toml"
+              for i in range(1, len(proj.folders) + 1)]
+    return ([f"{ROOT}/defaults.toml", f"{CONFIG}/config.toml", f"{CONFIG}/hosts/{host}.toml"]
+            + groups + [f"{CONFIG}/projects/{proj.name}.toml"])
+
+
+def instruction_files(proj, modules):
+    """Instruction files appended after all.md and <agent>.md, in order (may be missing)."""
+    groups = [f"{CONTEXT}/groups/{'/'.join(proj.folders[:i])}/group.md"
+              for i in range(1, len(proj.folders) + 1)]
+    return ([f"{CONTEXT}/instructions/{m}.md" for m in modules] + groups
+            + [f"{CONTEXT}/project-instructions/{proj.name}.md"])
+
+
+def file_hash(path):
+    if not os.path.isfile(path):    # regular files only (a FIFO would block)
+        return None
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return None
 
 
 def gib(s):
@@ -117,19 +146,26 @@ def main():
     src = proj.real       # resolved and checked by discovery: used for host reads
 
     host = socket.gethostname().split(".")[0]
-    cfg = load(f"{ROOT}/defaults.toml") or die(f"{ROOT}/defaults.toml missing")
-    merge(cfg, load(f"{CONFIG}/config.toml"))
-    hcfg = load(f"{CONFIG}/hosts/{host}.toml")
+    files = layers(proj, host)
+    cfg = load(files[0]) or die(f"{files[0]} missing")
+    merge(cfg, load(files[1]))
+    hcfg = load(files[2])
     if hcfg is None:
-        warn(f"{CONFIG}/hosts/{host}.toml missing: using defaults (run agentbox-prep.sh to create it)")
+        warn(f"{files[2]} missing: using defaults (run agentbox-prep.sh to create it)")
     merge(cfg, hcfg)
     # The global cap (agents.slice) is shared by ALL projects: compute it from
-    # defaults + host only, so one project file cannot change it for the others.
+    # defaults + host only, so one group or project file cannot change it for the others.
     rs_global = dict(cfg["resources"])
-    pcfg = load(f"{CONFIG}/projects/{p}.toml")
-    if pcfg is None:
-        warn(f"{CONFIG}/projects/{p}.toml missing: using the DEFAULT profile ({cfg['project']['profile']})")
-    merge(cfg, pcfg)
+    for f in files[3:]:
+        # A folder named group.toml can take its parent's path: such a layer is absent.
+        lcfg = load(f) if os.path.isfile(f) else None
+        if f == files[-1] and lcfg is None:
+            warn(f"{f} missing: using the DEFAULT profile ({cfg['project']['profile']})")
+        for k in GLOBAL_RESOURCES:
+            if (lcfg or {}).get("resources", {}).get(k) is not None:
+                warn(f"{os.path.relpath(f, CONFIG)}: [resources] {k} ignored (global; set it in "
+                     f"hosts/{host}.toml). Use [project] mem/cpus")
+        merge(cfg, lcfg)
 
     pr, rs, net, rt = cfg["project"], cfg["resources"], cfg["network"], cfg["runtime"]
     hst = cfg.get("host", {})
@@ -173,9 +209,6 @@ def main():
     with open("/proc/meminfo") as f:
         total = int(next(l for l in f if l.startswith("MemTotal")).split()[1]) / 2**20
     threads = os.cpu_count() or 1
-    for k in ("reserve_mem_gib_min", "reserve_mem_pct", "reserve_threads", "memory_high_pct", "tasks_max"):
-        if (pcfg or {}).get("resources", {}).get(k) is not None:
-            warn(f"projects/{p}.toml: [resources] {k} ignored (global; set it in hosts/{host}.toml). Use [project] mem/cpus")
     g = rs_global
     reserve = max(g["reserve_mem_gib_min"], total * g["reserve_mem_pct"] / 100)
     memmax = max(4, int(total - reserve))
@@ -224,13 +257,30 @@ def main():
             parts[0] = "127.0.0.1"
         publish.append(":".join(parts))
 
+    # Instruction modules: only from the TOML layers above (the hint cannot set them).
+    modules = cfg.get("context", {}).get("instructions", [])
+    if not (isinstance(modules, list) and all(isinstance(m, str) for m in modules)):
+        die("[context] instructions must be a list of names")
+    for m in modules:
+        if not m or "/" in m or m.startswith(".") or m in ("all", "dev") + KNOWN_AGENTS:
+            die(f"[context] instructions: bad module name {m!r} (a file name in "
+                f"{CONTEXT}/instructions/ without .md; all, dev and agent names load anyway)")
+    extra = instruction_files(proj, modules)
+    for f in extra[:len(modules)]:
+        if not os.path.isfile(f):
+            warn(f"instruction module {f} missing: skipped")
+    ctx_extra = [f for f in extra if os.path.isfile(f)]
+    # Contents, so an edited file also shows the restart notice.
+    base = [f"{CONTEXT}/instructions/{n}.md" for n in ("all", "dev") + KNOWN_AGENTS]
+    instr = {f: file_hash(f) for f in base + extra}
+
     norm = "".join(c if c.isalnum() or c == "_" else "_" for c in p)
     effective = dict(profile=profile, image=IMAGES[profile], runtime=runtime, dev_rt=dev_rt,
                      agents=agents, dev=bool(pr.get("dev", True)), net=net["mode"],
                      dns=net["dns"], publish=publish, mounts=mounts, tex=tex,
                      flags=rt["runsc_flags"], gpu=hst.get("gpu", "none"),
                      idents={a: cfg.get("agents", {}).get(a, {}).get("git") for a in KNOWN_AGENTS},
-                     context=cfg.get("context", {}),
+                     context=cfg.get("context", {}), instr=instr,
                      skills={a: cfg.get("agents", {}).get(a, {}).get("skills") for a in KNOWN_AGENTS})
     cfghash = hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()[:12]
 
@@ -246,7 +296,7 @@ def main():
         UPDATE_MAX_AGE_H=cfg.get("tools", {}).get("update_max_age_hours", 12),
     )
     arrays = dict(RTFLAGS=rt["runsc_flags"], DNS=net["dns"], PUBLISH=publish,
-                  XMOUNTS=mounts, AGENTS=agents)
+                  XMOUNTS=mounts, AGENTS=agents, CTX_EXTRA=ctx_extra)
     ctx = cfg.get("context", {})
     skills_mode = ctx.get("skills", "ro")
     if skills_mode not in ("ro", "rw", "off"):

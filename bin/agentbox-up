@@ -107,8 +107,9 @@ for k, v in dict(HOST=e["H"], AGENT=e["A"], PROJECT=e["PRJ"], MEM=e["M"], CPUS=e
     t = t.replace("{{" + k + "}}", v)
 open(sys.argv[2], "w").write(t)
 PY
-    # Your own instructions from ~/.agents-context, appended (both optional).
-    for extra in "$AB_CONTEXT/instructions/all.md" "$AB_CONTEXT/instructions/$ag.md"; do
+    # Your own instructions from ~/.agents-context, appended (all optional): all.md,
+    # <agent>.md, then modules, folder and project files (CTX_EXTRA, from cfg.py).
+    for extra in "$AB_CONTEXT/instructions/all.md" "$AB_CONTEXT/instructions/$ag.md" "${CTX_EXTRA[@]}"; do
       [[ -f $extra ]] && { printf '\n'; cat "$extra"; } >> "$C/$ag.md"
     done
   done

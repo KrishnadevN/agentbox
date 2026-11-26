@@ -28,12 +28,17 @@ dns  = ["169.254.1.1"]
 [context]
 # Your agent context lives in ~/.agents-context (its own private git repo if you like):
 #   instructions/all.md, instructions/<agent>.md  -> added to each agent's context file
+#   instructions/<module>.md                      -> added when listed in `instructions`
+#   groups/<folder>/.../group.md                  -> added for projects below that folder
+#   project-instructions/<project>.md             -> added for that project only
 #   skills/<name>/SKILL.md                        -> each agent's personal skills folder
 #   projects/<project>/                           -> /work/.agentbox in that project
 project_files = true         # mount projects/<project>/ writable at /work/.agentbox and
                              # link its entries (AGENTS.md, .claude/, ...) into /work
 skills        = "ro"         # ro | rw | off   (rw lets one project's agent change skills
                              # that agents in all other projects then use)
+instructions  = []           # modules, e.g. ["latex"]: instructions/latex.md is added
+                             # after all.md and <agent>.md (a later layer's list replaces this)
 
 [tools]
 update_max_age_hours = 12    # update agent CLIs before launch if older; 0 = always

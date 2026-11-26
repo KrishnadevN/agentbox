@@ -1,0 +1,4 @@
+# Copy to ~/.config/agentbox/groups/research/Survey/group.toml: applies to projects
+# below ~/Projects/research/Survey/, after research/group.toml.
+[project]
+agents = ["claude", "codex"]

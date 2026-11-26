@@ -1,0 +1,7 @@
+# Copy to ~/.config/agentbox/groups/research/group.toml: applies to every project
+# below ~/Projects/research/ (same keys as a project file; the project file wins).
+[project]
+profile = "docs"
+
+[context]
+instructions = ["latex"]     # adds ~/.agents-context/instructions/latex.md

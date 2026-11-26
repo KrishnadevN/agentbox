@@ -249,13 +249,26 @@ told in their context file that this is how it works.
 
 agentbox writes a small context file for every agent: which machine it is on, its limits,
 how git and the network work in the sandbox, and both your git identity and its own. Your
-instructions come on top of that, from three places:
+instructions come on top of that:
 
 | Where | Who sees it | Good for |
 |---|---|---|
 | `AGENTS.md`, `CLAUDE.md`, `.claude/`, `.agents/` in the repository | everyone who clones it | project rules you are happy to publish |
 | `~/.agents-context/projects/<project>/` | only your agents, writable | private notes and rules for one project |
 | `~/.agents-context/instructions/all.md` and `<agent>.md` | only your agents, read-only | your personal rules for every project |
+| `~/.agents-context/instructions/<module>.md`, listed in `[context] instructions` | only your agents, read-only | rules for some projects (LaTeX, a language, a workflow) |
+| `~/.agents-context/groups/<folder>/.../group.md` | only your agents, read-only | rules for every project below a folder of `~/Projects` |
+| `~/.agents-context/project-instructions/<project>.md` | only your agents, read-only | private rules for one project that agents must not change |
+
+The read-only files are added to each agent's context file in this order: `all.md`,
+`<agent>.md`, the modules in listed order, the folder files from the outermost folder
+inward, the project file. For `~/Projects/research/Survey/Survey-paper` the folder files
+are `groups/research/group.md`, then `groups/research/Survey/group.md`. List modules by
+file name without `.md`, e.g. `[context] instructions = ["latex"]` in a group or project
+file (`all`, `dev` and agent names are not module names; those files are added anyway).
+A missing module is skipped with a warning. After adding, removing or editing any of
+these files, the next `agentbox <project> <agent>` tells you to restart the project
+(`agentbox <project> restart`); the low-level `agentbox-enter` does not check.
 
 **Private project files.** Everything in `~/.agents-context/projects/<project>/` appears
 in the sandbox at `/work/.agentbox/`, and each entry is linked into `/work` — so a private
@@ -297,10 +310,18 @@ over all):
 | `~/.agentbox/defaults.toml` | the package defaults — don't edit, override instead |
 | `~/.config/agentbox/config.toml` | your defaults for every machine and project |
 | `~/.config/agentbox/hosts/<hostname>.toml` | one machine: label, GPU, reserves, `tex_root` |
+| `~/.config/agentbox/groups/<folder>/.../group.toml` | every project below a folder of `~/Projects`, outermost folder first |
 | `~/.config/agentbox/projects/<project>.toml` | one project: image, agents, ports, datasets |
 
 `examples/` has a starting point for each, including a project file that lists every
 option with its default. A project without a file uses the defaults and you get a warning.
+
+Group files mirror the folders above a project: `~/Projects/research/Survey/Survey-paper`
+reads `groups/research/group.toml`, then `groups/research/Survey/group.toml`. They take
+the same keys as project files, with two exceptions: the global reserves (`[resources]
+reserve_*`, `memory_high_pct`, `tasks_max`) belong in the host file and are ignored with
+a warning, and `tags` (for `agentbox list --tag`) is read only from the project file.
+A list in a later file replaces the earlier list; lists are not merged.
 
 Keep `~/.config/agentbox` out of reach of agents — it decides what the sandbox may do,
 so agentbox never mounts it. A project repository can contain an `.agentbox-hint.toml`,
@@ -421,7 +442,7 @@ bin/        commands: agentbox, agentbox-up/-down/-enter/-build/-update-tools/-n
 lib/        shell helpers, config merging (cfg.py), image layers (images.py)
 images/     profiles.toml and one folder per layer
 scripts/    host preparation, check suite, TeX Live installer
-examples/   config, host and project examples
+examples/   config, host, group, project and instruction examples
 shell/      bash, zsh and fish integration
 net/        egress rules        templates/   agent context file
 config/     Podman entry for gVisor

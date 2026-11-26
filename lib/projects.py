@@ -33,6 +33,7 @@ class Project(NamedTuple):
     real: str      # resolved and checked folder (for host git and file reads)
     category: str  # first folder below ROOT, if depth > 1
     group: str     # parent folder, if depth >= 3
+    folders: tuple  # all folders between the (resolved) root and the repo, outer first
 
 
 def _inside(real, roots):
@@ -76,7 +77,7 @@ def discover(root=ROOT, exclude=EXCLUDE):
                 mode = None
             if mode is not None and stat.S_ISDIR(mode):
                 found.append(Project(e.name, e.path, real, p[0] if len(p) > 1 else "",
-                                     p[-2] if len(p) >= 3 else ""))
+                                     p[-2] if len(p) >= 3 else "", tuple(p[:-1])))
             elif mode is not None and (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
                 continue  # a checkout that shares another repo's git data: boundary only
             elif len(p) < MAX_DEPTH:
