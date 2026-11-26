@@ -1,6 +1,7 @@
 # examples/projects/all-options.toml — EVERY option, with its default.
 # Copy to ~/.config/agentbox/projects/<repository-folder-name>.toml and keep only what you change.
-# Order of precedence: defaults.toml < config.toml < hosts/<host>.toml < this file < CLI options.
+# Order of precedence: defaults.toml < config.toml < hosts/<host>.toml < groups/.../group.toml
+# < this file < CLI options.
 
 [project]
 # profile = "python"        # image: base | python | web | docs
@@ -12,6 +13,9 @@
 # data_ro = []              # read-only -> /data/<name>, e.g. ["~/Data/microscopy-2026"]
 # ref_ro  = []              # read-only -> /ref/<name>,  e.g. ["~/Projects/other-paper"]
                             #   (a working tree: uncommitted files and .env become readable)
+                            #   also "project:<name>" (your repo of that project) and
+                            #   "agents:<name>" (its agent copy), e.g. ["agents:mypkg"]
+# env  = {}                 # variables for all containers, e.g. { PYTHONPATH = "/ref/mypkg/src" }
 # mem  = ""                 # cap for THIS project, e.g. "48G" ("" = only the global cap)
 # cpus = 0                  # CPU threads for THIS project (0 = only the global cap)
 # tags = []                 # labels for `agentbox list --tag`, e.g. ["paper", "2026"]

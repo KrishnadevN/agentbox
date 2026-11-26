@@ -204,6 +204,7 @@ start_ctr() {  # start_ctr <name> <runtime> [extra podman args...]
     -v "$AB_STATE/cache/pnpm:/home/agent/.local/share/pnpm:rw"
     -v "$AB_STATE/cache/npm:/home/agent/.npm:rw"
     "${XMOUNTS[@]}" "${CTXM[@]}"
+    "${ENV_ARGS[@]}"              # [project] env first: agentbox's own -e below win
     -e HOME=/home/agent -e PATH="$path" -e TZ="$tz"
     -e AGENTBOX=1 -e AGENTBOX_HOST="$HOST_LABEL" -e AGENTBOX_PROJECT="$P"
     -e AGENTBOX_AGENT="$n" -e AGENTBOX_RUNTIME="$rt" -e AGENTBOX_GPU="$GPU"

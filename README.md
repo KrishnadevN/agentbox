@@ -321,7 +321,39 @@ reads `groups/research/group.toml`, then `groups/research/Survey/group.toml`. Th
 the same keys as project files, with two exceptions: the global reserves (`[resources]
 reserve_*`, `memory_high_pct`, `tasks_max`) belong in the host file and are ignored with
 a warning, and `tags` (for `agentbox list --tag`) is read only from the project file.
-A list in a later file replaces the earlier list; lists are not merged.
+A list in a later file replaces the earlier list; lists are not merged. Tables such as
+`env` are combined key by key, and the later file wins per key.
+
+**Environment variables.** `[project] env = { KEY = "value" }` sets variables in every
+container of the project (agents and dev). agentbox's own variables (`HOME`, `PATH`,
+`AGENTBOX_*`, `GIT_CONFIG_GLOBAL`, the Copilot token) cannot be changed this way; such
+keys are ignored with a warning. Every agent can read the values (so can
+`podman inspect`), so don't put secrets there that you would not give the agents.
+
+**Other projects, read-only.** Besides host folders, `ref_ro` and `data_ro` (and
+`--ro` on the command line) accept two references, mounted read-only at `/ref/<name>`
+(`/data/<name>` in `data_ro`):
+
+- `project:<name>`: your repository of that project, as you have it in `~/Projects`,
+  including uncommitted files.
+- `agents:<name>`: that project's agent copy (`~/.agents-projects/<name>`), with
+  whatever its agents have written, committed or not. Its private files
+  (`/work/.agentbox` there) are not included. Treat the content like anything agents
+  write: this project's agents can read text placed there by the other project's agents.
+
+For example, to work on a paper while agents in another project develop the Python
+package it uses:
+
+```toml
+# ~/.config/agentbox/projects/Survey-paper.toml
+[project]
+ref_ro = ["agents:mypkg"]                  # or "project:mypkg" for your reviewed version
+env    = { PYTHONPATH = "/ref/mypkg/src" }
+```
+
+`import mypkg` then uses the other project's current code. The mount is read-only, so
+don't install the package in editable mode there, and don't write sandbox paths such as
+`/ref/...` into the paper's `pyproject.toml` or `uv.lock`.
 
 Keep `~/.config/agentbox` out of reach of agents — it decides what the sandbox may do,
 so agentbox never mounts it. A project repository can contain an `.agentbox-hint.toml`,

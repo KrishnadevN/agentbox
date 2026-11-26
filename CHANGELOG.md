@@ -5,6 +5,10 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- `[project] env = { KEY = "value" }` sets environment variables in every container of
+  a project (or of a folder, in a group file). `ref_ro`, `data_ro` and `--ro` accept
+  `project:<name>` (your repository of another project) and `agents:<name>` (its agent
+  copy, without its private files), mounted read-only at `/ref/<name>`.
 - Settings and instructions per folder of `~/Projects`: `~/.config/agentbox/groups/<folder>/group.toml`
   applies to every project below that folder (nested folders mirror `~/Projects`, outer
   first), and `~/.agents-context/groups/<folder>/group.md` is added to their agents'

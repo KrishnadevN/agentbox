@@ -1,0 +1,6 @@
+# Copy to ~/.config/agentbox/projects/<repository-folder-name>.toml
+# A paper that uses a Python package developed in another project ("mypkg").
+[project]
+profile = "python"
+ref_ro  = ["agents:mypkg"]   # its agent copy at /ref/mypkg ("project:mypkg" = your repo)
+env     = { PYTHONPATH = "/ref/mypkg/src" }   # import mypkg uses the current code

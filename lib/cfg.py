@@ -13,7 +13,7 @@ $AB_CONFIG defaults to ~/.config/agentbox (your config, separate from the packag
 Prints bash assignments on stdout (for `eval`). Warnings go to stderr.
 The project repo itself is never trusted for mounts, ports or runtime.
 """
-import argparse, hashlib, json, os, shlex, socket, sys, tomllib
+import argparse, hashlib, json, os, re, shlex, socket, stat, sys, tomllib
 
 HOME = os.path.expanduser("~")
 ROOT = os.environ.get("AB_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,7 +43,9 @@ GLOBAL_RESOURCES = ("reserve_mem_gib_min", "reserve_mem_pct", "reserve_threads",
 PROTECTED = [f"{HOME}/{p}" for p in (
     ".ssh", ".gnupg", ".config", ".password-store", ".mozilla", ".pki",
     ".local/share/keyrings", ".netrc", ".git-credentials", ".docker",
-)] + [STATE, ROOT, CONFIG, AGENTS_DIR]
+)] + [STATE, ROOT, CONFIG, CONTEXT]  # AGENTS_DIR too: its own check in check_mount()
+# Set by agentbox itself (or by the launcher's --env-file, which --env would override).
+RESERVED_ENV = ("HOME", "PATH", "GIT_CONFIG_GLOBAL", "COPILOT_GITHUB_TOKEN")
 
 
 def warn(msg):
@@ -108,12 +110,32 @@ def gib(s):
         die(f"bad size: {s!r} (use e.g. 48G or 512M)")
 
 
-def check_mount(path):
+def check_env(path, data):
+    """[project] env of one config file: a table of NAME = "string" (checked before merging)."""
+    env = (data or {}).get("project", {}).get("env")
+    if env is None:
+        return
+    if not isinstance(env, dict):
+        die(f"{path}: [project] env must be a table, e.g. env = {{ KEY = \"value\" }}")
+    for k, v in env.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k):
+            die(f"{path}: [project] env: bad variable name {k!r}")
+        if not isinstance(v, str) or "\0" in v:
+            die(f"{path}: [project] env: {k} must be a string without NUL characters")
+
+
+def check_mount(path, agent_copy=False):
+    """agent_copy: path is a checked direct child of AGENTS_DIR (agents:<name>), the only
+    case where the AGENTS_DIR overlap is allowed; all other checks still apply."""
     real = os.path.realpath(os.path.expanduser(path))
     if not os.path.exists(real):
         die(f"mount source does not exist: {path}")
     def is_ancestor_or_same(anc, x):
         return x == anc or x.startswith(anc.rstrip("/") + "/")
+    agents = os.path.realpath(AGENTS_DIR)
+    if is_ancestor_or_same(real, agents) or is_ancestor_or_same(agents, real):
+        if not (agent_copy and os.path.dirname(real) == agents):
+            die(f"refusing to mount {real}: overlaps the agent copies in {agents} (use agents:<name>)")
     for p in map(os.path.realpath, PROTECTED):
         if is_ancestor_or_same(real, p) or is_ancestor_or_same(p, real):
             die(f"refusing to mount {real}: overlaps protected path {p}")
@@ -148,10 +170,14 @@ def main():
     host = socket.gethostname().split(".")[0]
     files = layers(proj, host)
     cfg = load(files[0]) or die(f"{files[0]} missing")
-    merge(cfg, load(files[1]))
+    check_env(files[0], cfg)
+    ccfg = load(files[1])
+    check_env(files[1], ccfg)
+    merge(cfg, ccfg)
     hcfg = load(files[2])
     if hcfg is None:
         warn(f"{files[2]} missing: using defaults (run agentbox-prep.sh to create it)")
+    check_env(files[2], hcfg)
     merge(cfg, hcfg)
     # The global cap (agents.slice) is shared by ALL projects: compute it from
     # defaults + host only, so one group or project file cannot change it for the others.
@@ -165,6 +191,7 @@ def main():
             if (lcfg or {}).get("resources", {}).get(k) is not None:
                 warn(f"{os.path.relpath(f, CONFIG)}: [resources] {k} ignored (global; set it in "
                      f"hosts/{host}.toml). Use [project] mem/cpus")
+        check_env(f, lcfg)
         merge(cfg, lcfg)
 
     pr, rs, net, rt = cfg["project"], cfg["resources"], cfg["network"], cfg["runtime"]
@@ -222,11 +249,38 @@ def main():
     if rs.get("threads_per_job"):
         jobt = min(jobt, rs["threads_per_job"])
 
+    env = {}
+    for k, v in pr.get("env", {}).items():
+        if k in RESERVED_ENV or k.startswith("AGENTBOX_"):
+            warn(f"[project] env: {k} ignored (set by agentbox)")
+        else:
+            env[k] = v
+
     # Mounts (read-only only; writable extras are deliberately not offered).
+    # project:<name> = that project's trusted repo, agents:<name> = its agent copy.
     mounts, seen = [], set()
     for kind, paths in (("data", pr.get("data_ro", [])), ("ref", pr.get("ref_ro", []) + a.ro)):
         for path in paths:
-            real = check_mount(path)
+            path = str(path)
+            pre, name = path.split(":", 1) if ":" in path else ("", path)
+            if pre in ("project", "agents") and ("/" in name or name.startswith(".") or not name):
+                die(f"{path}: bad project name {name!r}")
+            if pre == "project":
+                other, err = _projects.lookup(name, found)
+                if err:
+                    die(f"{path}: {err}")
+                real = check_mount(other.real)
+            elif pre == "agents":
+                copy = f"{AGENTS_DIR}/{name}"
+                try:
+                    is_dir = stat.S_ISDIR(os.lstat(copy).st_mode)
+                except OSError:
+                    is_dir = False
+                if not is_dir:
+                    die(f"{path}: {copy} is not a folder: run 'agentbox-new-worktree {name}' first")
+                real = check_mount(copy, agent_copy=True)
+            else:
+                real = check_mount(path)
             base = os.path.basename(real.rstrip("/")) or "root"
             dst, n = f"/{kind}/{base}", 2
             while dst in seen:
@@ -280,7 +334,7 @@ def main():
                      dns=net["dns"], publish=publish, mounts=mounts, tex=tex,
                      flags=rt["runsc_flags"], gpu=hst.get("gpu", "none"),
                      idents={a: cfg.get("agents", {}).get(a, {}).get("git") for a in KNOWN_AGENTS},
-                     context=cfg.get("context", {}), instr=instr,
+                     context=cfg.get("context", {}), instr=instr, env=env,
                      skills={a: cfg.get("agents", {}).get(a, {}).get("skills") for a in KNOWN_AGENTS})
     cfghash = hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()[:12]
 
@@ -296,7 +350,8 @@ def main():
         UPDATE_MAX_AGE_H=cfg.get("tools", {}).get("update_max_age_hours", 12),
     )
     arrays = dict(RTFLAGS=rt["runsc_flags"], DNS=net["dns"], PUBLISH=publish,
-                  XMOUNTS=mounts, AGENTS=agents, CTX_EXTRA=ctx_extra)
+                  XMOUNTS=mounts, AGENTS=agents, CTX_EXTRA=ctx_extra,
+                  ENV_ARGS=[x for k, v in env.items() for x in ("-e", f"{k}={v}")])
     ctx = cfg.get("context", {})
     skills_mode = ctx.get("skills", "ro")
     if skills_mode not in ("ro", "rw", "off"):

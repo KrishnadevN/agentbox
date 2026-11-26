@@ -98,7 +98,7 @@ Acceptance: example files in `examples/groups/` and an example module in
 `examples/instructions/`; README section; cfg.py tests for the merge order, the module
 list and the hash; a check-suite test for folder and project instructions.
 
-### [ ] 4. Per-project environment and project references
+### [x] 4. Per-project environment and project references
 
 - `[project] env = { KEY = "value" }` → `-e KEY=value` for all containers of the project.
   Reject `AGENTBOX_*`, `HOME`, `PATH` (warn and ignore); values are plain strings.

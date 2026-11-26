@@ -50,7 +50,9 @@ dev         = true           # extra "dev" container with NO AI credentials
 dev_runtime = ""             # "" = same as runtime; "crun" helps dev servers (file watching)
 publish     = []             # ports, always bound to 127.0.0.1, e.g. ["5173"]
 data_ro     = []             # host dirs -> /data/<name> (read-only)
-ref_ro      = []             # host dirs -> /ref/<name>  (read-only)
+ref_ro      = []             # host dirs -> /ref/<name>  (read-only); also "project:<name>"
+                             # (that project's repo) and "agents:<name>" (its agent copy)
+env         = {}             # e.g. { PYTHONPATH = "/ref/mypkg/src" }, for all containers
 mem         = ""             # optional per-project cap, e.g. "48G"
 cpus        = 0              # optional per-project cap, 0 = global cap only
 

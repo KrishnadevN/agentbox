@@ -43,7 +43,8 @@ P2=agentbox-selftest-b-$RUNID PL=agentbox-selftest-legacy-$RUNID
 CAT2=agentbox-selftest-cat-$RUNID     # the second project is nested: $AB_PROJECTS/<cat>/<p2>
 POD2=ab-$P2 S2=$AB_PROJECTS/$CAT2/$P2 W2=$AB_AGENTS/$P2 SLICE2=agents-$(ab_norm "$P2").slice
 GI2=$AB_CONTEXT/groups/$CAT2 PI2=$AB_CONTEXT/project-instructions/$P2.md   # its folder + project instructions
-MADE2=0 MADEL=0 MADEGD=0 MADEPD=0
+GC2=$AB_CONFIG/groups/$CAT2                                                # its folder config (env)
+MADE2=0 MADEL=0 MADEGD=0 MADEPD=0 MADECG=0
 DATA=$HOME/agentbox-selftest-data SECRET=$HOME/.agentbox-selftest-secret
 cx() { local c=$1; shift; podman exec "$POD-$c" bash -c "$*"; }   # run in a container
 
@@ -113,6 +114,8 @@ cleanup() {
       "$GI2" "$PI2"
     ((MADEGD)) && rmdir "$AB_CONTEXT/groups" 2>/dev/null
     ((MADEPD)) && rmdir "$AB_CONTEXT/project-instructions" 2>/dev/null
+    rm -f "$GC2/group.toml"; rmdir "$GC2" 2>/dev/null
+    ((MADECG)) && rmdir "$AB_CONFIG/groups" 2>/dev/null
     rm -f "$HOME/.config/systemd/user/$SLICE2"
   fi
   ((MADEL)) && podman pod rm -f -t 2 "ab-$PL" >/dev/null 2>&1
@@ -175,14 +178,18 @@ fixture_free() {  # fixture_free <path>...  -> fails if any exists
 }
 fixture_free "$AB_CONTEXT/groups" && MADEGD=1                 # parents: remove later only if new
 fixture_free "$AB_CONTEXT/project-instructions" && MADEPD=1
+fixture_free "$AB_CONFIG/groups" && MADECG=1
 if ! fixture_free "$AB_PROJECTS/$CAT2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
-     "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" "$GI2" "$PI2" || podman pod exists "$POD2"; then
+     "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" "$GI2" "$PI2" "$GC2" || podman pod exists "$POD2"; then
   fail "fixture $P2 already exists; not touching it"
 elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "selftest-folder-instr" > "$GI2/group.md" \
   && echo "selftest-project-instr" > "$PI2" \
+  && mkdir -p "$GC2" && printf '[project]\nenv = { AB_SELFTEST = "env-%s" }\n' "$RUNID" > "$GC2/group.toml" \
+  && cx dev "echo agents-$RUNID > /work/ab-ref-agents" && echo "project-$RUNID" > "$S/ab-ref-project" \
   && mkdir -p "$S2" && git -C "$S2" init -q -b main && echo "# selftest2" > "$S2/README.md" \
   && git -C "$S2" add . && git -C "$S2" -c user.name=t -c user.email=t@t commit -qm init \
-  && "$B/agentbox-new-worktree" "$P2" >/dev/null && "$B/agentbox-up" "$P2" "${UPOPTS[@]}" >/dev/null; then
+  && "$B/agentbox-new-worktree" "$P2" >/dev/null \
+  && "$B/agentbox-up" "$P2" "${UPOPTS[@]}" --ro "agents:$P" --ro "project:$P" >/dev/null; then
   pass "second project (nested in a category folder) started"
   "$B/agentbox" list "$CAT2" 2>/dev/null | grep -q "^  $P2 " \
     && pass "agentbox list shows it under its category" || fail "agentbox list does not show $CAT2/$P2"
@@ -200,6 +207,18 @@ elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "self
   done
   expect "folder, then project instructions in project 2's context" podman exec "$POD2-claude" \
     bash -c "awk '/selftest-folder-instr/{g=NR} /selftest-project-instr/{p=NR} END{exit !(g && p && g < p)}' ~/${ins[claude]}"
+  # [project] env from the folder config; references to project 1 (agents: then project:).
+  for c in claude dev; do
+    expect "$c: [project] env arrives" podman exec "$POD2-$c" bash -c "test \"\$AB_SELFTEST\" = env-$RUNID"
+  done
+  expect "project 1 reads its private AGENTS.md (control)" cx claude "grep -q 'private selftest notes' /work/AGENTS.md"
+  expect "agents:$P shows project 1's agent copy, read-only, without its private files" podman exec "$POD2-claude" \
+    bash -c "grep -qx agents-$RUNID /ref/$P/ab-ref-agents && ! test -e /ref/$P/ab-ref-project \
+      && test -L /ref/$P/AGENTS.md && ! cat /ref/$P/AGENTS.md 2>/dev/null \
+      && d=\$(ls -A /ref/$P/.agentbox) && test -z \"\$d\" && ! touch /ref/$P/.ab-x 2>/dev/null"
+  expect "project:$P shows project 1's repository, read-only" podman exec "$POD2-claude" \
+    bash -c "grep -qx project-$RUNID /ref/${P}_2/ab-ref-project && ! test -e /ref/${P}_2/ab-ref-agents \
+      && ! touch /ref/${P}_2/.ab-x 2>/dev/null"
 else
   fail "second project failed to start"
 fi
