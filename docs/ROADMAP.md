@@ -36,20 +36,22 @@ Acceptance: check suite — a marker in project A's config folder is not visible
 project, each agent's instruction file is in place in both, and both launcher paths
 refuse a running pod without the layout label.
 
-### [ ] 2. Nested project discovery
+### [x] 2. Nested project discovery
 
 Goal: projects may live at any depth (≤ 4) under `~/Projects`, e.g.
 `research/ProjectName/ProjectName-manuscript`. Nothing is stored separately, so nothing
 goes out of sync.
 
 Design (decided):
-- A project is a folder that contains `.git` (folder **or** file). Walk `$AB_PROJECTS` to
-  depth 4 and **stop descending** once a folder contains `.git`; nested repos are ignored.
-  Skip hidden folders. Implement in Python (`lib/projects.py`, stdlib only).
+- A project is a folder with its own `.git` **folder**. Walk `$AB_PROJECTS` to depth 4 and
+  **stop descending** at any `.git` (a `.git` file or symlink, as in linked worktrees, is
+  a boundary but not a project: it shares another checkout's remotes). Skip hidden
+  folders; do not follow symlinks (one path per project). Implement in Python
+  (`lib/projects.py`, stdlib only).
 - Project name = the repo folder's own name (basename). It stays the key everywhere:
   `~/.agents-projects/<name>` (flat), `~/.config/agentbox/projects/<name>.toml`, pod
   `ab-<name>`, `~/.agents-context/projects/<name>/`.
-- Two repos with the same name → refuse to start, list both paths.
+- Two or more repos with the same name → refuse to start, list all their paths.
 - Path-derived metadata: `category` = first path component below `~/Projects` (if depth
   > 1), `group` = parent folder name (if depth ≥ 3). Optional `tags = [...]` in the
   project config.
@@ -63,8 +65,10 @@ Design (decided):
 
 Acceptance:
 - `tests/test_projects.py` (unittest, temp dirs): depth limit, pruning at `.git`, `.git`
-  as file, nested repo ignored, duplicate detection, category/group derivation.
-- Existing flat projects keep working unchanged.
+  file or symlink is no project, symlinked folders not followed, nested repo ignored,
+  duplicate detection, category/group derivation.
+- Existing flat projects keep working unchanged, except symlinked folders and linked
+  worktrees (documented in the CHANGELOG).
 - Check suite passes; CI runs the unit tests.
 
 ### [ ] 3. Group configuration and group instructions

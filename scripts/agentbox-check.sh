@@ -40,7 +40,8 @@ S=$AB_PROJECTS/$P W=$AB_AGENTS/$P
 # Extra fixtures get fresh names per run; cleanup removes only what this run created.
 RUNID=$(date +%s)-$$
 P2=agentbox-selftest-b-$RUNID PL=agentbox-selftest-legacy-$RUNID
-POD2=ab-$P2 S2=$AB_PROJECTS/$P2 W2=$AB_AGENTS/$P2 SLICE2=agents-$(ab_norm "$P2").slice
+CAT2=agentbox-selftest-cat-$RUNID     # the second project is nested: $AB_PROJECTS/<cat>/<p2>
+POD2=ab-$P2 S2=$AB_PROJECTS/$CAT2/$P2 W2=$AB_AGENTS/$P2 SLICE2=agents-$(ab_norm "$P2").slice
 MADE2=0 MADEL=0
 DATA=$HOME/agentbox-selftest-data SECRET=$HOME/.agentbox-selftest-secret
 cx() { local c=$1; shift; podman exec "$POD-$c" bash -c "$*"; }   # run in a container
@@ -107,7 +108,7 @@ cleanup() {
   if ((MADE2)); then
     podman pod rm -f -t 2 "$POD2" >/dev/null 2>&1
     podman unshare rm -rf "$W2" "$AB_STATE/home/$P2" 2>/dev/null
-    rm -rf "$S2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" "$AB_CONTEXT/projects/$P2"
+    rm -rf "${AB_PROJECTS:?}/$CAT2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" "$AB_CONTEXT/projects/$P2"
     rm -f "$HOME/.config/systemd/user/$SLICE2"
   fi
   ((MADEL)) && podman pod rm -f -t 2 "ab-$PL" >/dev/null 2>&1
@@ -168,13 +169,15 @@ done
 fixture_free() {  # fixture_free <path>...  -> fails if any exists
   local f; for f in "$@"; do [[ -e $f || -L $f ]] && return 1; done; return 0
 }
-if ! fixture_free "$S2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
+if ! fixture_free "$AB_PROJECTS/$CAT2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
      "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" || podman pod exists "$POD2"; then
   fail "fixture $P2 already exists; not touching it"
 elif MADE2=1 && mkdir -p "$S2" && git -C "$S2" init -q -b main && echo "# selftest2" > "$S2/README.md" \
   && git -C "$S2" add . && git -C "$S2" -c user.name=t -c user.email=t@t commit -qm init \
   && "$B/agentbox-new-worktree" "$P2" >/dev/null && "$B/agentbox-up" "$P2" "${UPOPTS[@]}" >/dev/null; then
-  pass "second project started"
+  pass "second project (nested in a category folder) started"
+  "$B/agentbox" list "$CAT2" 2>/dev/null | grep -q "^  $P2 " \
+    && pass "agentbox list shows it under its category" || fail "agentbox list does not show $CAT2/$P2"
   declare -A ins=([claude]=.claude/CLAUDE.md [codex]=.codex/AGENTS.md [agy]=.gemini/GEMINI.md
                   [copilot]=.copilot/copilot-instructions.md)
   for c in claude codex agy copilot; do

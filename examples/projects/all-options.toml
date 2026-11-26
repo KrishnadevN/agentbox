@@ -1,5 +1,5 @@
 # examples/projects/all-options.toml — EVERY option, with its default.
-# Copy to ~/.config/agentbox/projects/<dir-name-in-~/Projects>.toml and keep only what you change.
+# Copy to ~/.config/agentbox/projects/<repository-folder-name>.toml and keep only what you change.
 # Order of precedence: defaults.toml < config.toml < hosts/<host>.toml < this file < CLI options.
 
 [project]
@@ -14,6 +14,7 @@
                             #   (a working tree: uncommitted files and .env become readable)
 # mem  = ""                 # cap for THIS project, e.g. "48G" ("" = only the global cap)
 # cpus = 0                  # CPU threads for THIS project (0 = only the global cap)
+# tags = []                 # labels for `agentbox list --tag`, e.g. ["paper", "2026"]
 
 [runtime]
 # default = "runsc"         # runsc (gVisor, safer) | crun (faster, shares host kernel)

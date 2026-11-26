@@ -62,6 +62,10 @@ ab_safe_mkdir() { python3 "$AB_LIB/safe_mkdir.py" "$@"; }
 # ab_safe_touch BASE REL...  same for files: create empty if missing, refuse symlinks
 ab_safe_touch() { python3 "$AB_LIB/safe_mkdir.py" --file "$@"; }
 
+# ab_project_path <name>  -> resolved folder of your repo (see lib/projects.py);
+# prints the reason and fails for unknown or duplicate names
+ab_project_path() { python3 "$AB_LIB/projects.py" path "$1"; }
+
 # ab_pod_netns <pod>  -> path of the pod's network namespace (empty if none)
 ab_pod_netns() {
   local infra

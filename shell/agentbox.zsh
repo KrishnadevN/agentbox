@@ -7,7 +7,7 @@ path=("$__ab_pkg/bin" ${path:#$__ab_pkg/bin})
 () { local t=( /usr/local/texlive/*/bin/x86_64-linux(N/On) ); (( $#t )) && path+=("$t[1]") }
 typeset -U path
 
-__ab_projects() { local d; for d in ${AB_PROJECTS:-$HOME/Projects}/*(N/); do print -r -- ${d:t}; done }
+__ab_projects() { "$__ab_pkg/bin/agentbox" __projects 2>/dev/null }   # any depth, see lib/projects.py
 
 # --- completion -------------------------------------------------------------
 _agentbox() {

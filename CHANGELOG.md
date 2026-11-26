@@ -5,6 +5,15 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- Projects can live in subfolders of `~/Projects`, up to four levels deep (for example
+  `research/Survey/Survey-paper`). The name is still the repository's folder name; two
+  repositories with the same name are refused until one is renamed. `agentbox list`
+  shows a tree and filters by folder (`agentbox list research`) or by `tags = [...]` in
+  the project file (`agentbox list --tag paper`). Shell completion finds nested projects.
+  Changed: symlinked folders in `~/Projects` are no longer projects (each project has one
+  path), and a project needs its own `.git` folder, so linked worktrees are not projects
+  (they share the main checkout's remotes). Move such repositories into `~/Projects`, or
+  use the main checkout.
 - Privacy fix: each agent's config folder (login, settings, conversations, history) is now
   per project, in `~/.local/share/agentbox/home/<project>/<agent>/`. Before, one folder in
   `~/.local/share/agentbox/auth/` was shared by all projects: `/resume` mixed projects,

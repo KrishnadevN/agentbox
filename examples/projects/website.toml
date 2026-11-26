@@ -1,4 +1,4 @@
-# Copy to ~/.config/agentbox/projects/<dir-name-in-~/Projects>.toml
+# Copy to ~/.config/agentbox/projects/<repository-folder-name>.toml
 [project]
 profile     = "web"
 publish     = ["5173"]       # -> http://127.0.0.1:5173 on the host only

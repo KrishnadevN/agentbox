@@ -140,7 +140,18 @@ from TUG once. Your host and the containers share that single copy. Afterwards, 
 
 ## Your first project
 
-Any git repository in `~/Projects` with at least one commit works:
+Any git repository in `~/Projects` with at least one commit works, also in subfolders up
+to four levels deep, such as `~/Projects/research/Survey/Survey-paper`. The project's name
+is the repository's folder name (`Survey-paper`), so names must be unique: if two
+repositories share a name, agentbox lists both paths and refuses that name until you
+rename one. Hidden folders are skipped, and agentbox does not look inside a repository
+(nested repositories and submodules are not projects).
+
+agentbox does not follow symlinks in `~/Projects`, so each project has exactly one path:
+a symlinked folder is not found. A project needs its own `.git` folder, so linked
+worktrees (`git worktree add`) are not projects either: they share their main
+checkout's remotes and branches. Keep real repositories in `~/Projects` and use the main
+checkout. `~/Projects` itself may be a symlink.
 
 ```
 agentbox website claude
@@ -161,7 +172,8 @@ its container. Other commands:
 | Apply changed settings | `agentbox website restart` |
 | Stop it (files and logins stay) | `agentbox website down` |
 | Stop everything | `agentbox down-all` |
-| List projects and pods | `agentbox list` |
+| List projects and pods (a tree by folder) | `agentbox list` |
+| Only one folder, or one tag | `agentbox list research`, `agentbox list --tag paper` |
 
 Agents keep running when you close the terminal only if you started them inside tmux
 (or similar) on the host. For long jobs, start tmux first and detach with `Ctrl-b d`.

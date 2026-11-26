@@ -8,7 +8,7 @@ for __ab_tex in /usr/local/texlive/*/bin/x86_64-linux; do :; done   # newest yea
 [[ -d $__ab_tex ]] && case ":$PATH:" in *":$__ab_tex:"*) ;; *) PATH=$PATH:$__ab_tex ;; esac
 unset __ab_tex
 
-__ab_projects() { local d; for d in "${AB_PROJECTS:-$HOME/Projects}"/*/; do [[ -d $d ]] && basename "$d"; done; }
+__ab_projects() { "$__ab_pkg/bin/agentbox" __projects 2>/dev/null; }   # any depth, see lib/projects.py
 
 # --- completion -------------------------------------------------------------
 _agentbox() {

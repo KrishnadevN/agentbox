@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # agentbox-new-worktree <project>
-# Creates, from YOUR repo ~/Projects/<p> (committed state only):
+# Creates, from YOUR repo (found under ~/Projects, up to 4 levels deep; committed state only):
 #   ~/.local/share/agentbox/bridge/<p>.git   bare repo, host-owned, read-only for agents (/upstream)
 #   ~/.agents-projects/<p>                    the agents' working copy (/work)
 # and adds the remote "agent" to your repo, so `git fetch agent` brings their commits.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 p=${1:?usage: agentbox-new-worktree <project>}
-S=$AB_PROJECTS/$p; W=$AB_AGENTS/$p; BR=$AB_STATE/bridge/$p.git
+S=$(ab_project_path "$p") || exit 1
+W=$AB_AGENTS/$p; BR=$AB_STATE/bridge/$p.git
 git -C "$S" rev-parse --verify -q HEAD >/dev/null || ab_die "$S is not a git repo with at least one commit"
 [[ -e $W ]] && ab_die "$W already exists"
 mkdir -p "$AB_AGENTS" "$AB_STATE/bridge"

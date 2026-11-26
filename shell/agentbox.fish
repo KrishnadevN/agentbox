@@ -4,8 +4,6 @@
 
 set -l __ab_pkg (path dirname (path dirname (path resolve (status filename))))
 fish_add_path -g $__ab_pkg/bin
-set -q AB_PROJECTS; or set -g __ab_projects $HOME/Projects
-set -q AB_PROJECTS; and set -g __ab_projects $AB_PROJECTS
 set -q AB_AGENTS; or set -g __ab_agents $HOME/.agents-projects
 set -q AB_AGENTS; and set -g __ab_agents $AB_AGENTS
 
@@ -13,9 +11,8 @@ set -q AB_AGENTS; and set -g __ab_agents $AB_AGENTS
 set -l __ab_tex /usr/local/texlive/*/bin/x86_64-linux    # `set` tolerates no match
 set -q __ab_tex[1]; and fish_add_path -g (path sort $__ab_tex)[-1]
 
-function __agentbox_projects
-    set -l d $__ab_projects/*/
-    set -q d[1]; and path basename $d
+function __agentbox_projects   # any depth, see lib/projects.py
+    agentbox __projects 2>/dev/null
 end
 
 # --- completion -------------------------------------------------------------

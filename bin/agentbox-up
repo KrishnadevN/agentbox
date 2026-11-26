@@ -7,9 +7,9 @@ source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 ab_require_cmds podman python3 systemd-run nft git
 [[ $# -ge 1 && $1 != -* ]] || ab_die "usage: agentbox-up <project> [options]"
 p=$1; shift
+ab_require_layout "ab-$p"     # before any config work: an old pod is refused first
 cfgout=$(python3 "$AB_LIB/cfg.py" "$p" "$@") || exit 1
 eval "$cfgout"
-ab_require_layout "$POD"
 
 [[ -d $WORK ]]   || ab_die "$WORK missing: run 'agentbox-new-worktree $P' first"
 [[ -d $BRIDGE ]] || ab_die "$BRIDGE missing: run 'agentbox-new-worktree $P' first"

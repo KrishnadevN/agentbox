@@ -2,7 +2,7 @@
 # agentbox — one command for daily use.
 #
 #   agentbox <project> [action] [options]
-#   agentbox list
+#   agentbox list [category|group] [--tag TAG]   your projects as a tree
 #   agentbox down-all  stop every agentbox pod
 #
 # actions:
@@ -11,7 +11,7 @@
 #   shell [name]      shell in the dev container, or in an agent container
 #   up | down | restart | status
 #   blocked           connections the egress rules refused (since the pod started)
-#   fetch             bring agent commits into ~/Projects/<p> as agent/* branches
+#   fetch             bring agent commits into your repo as agent/* branches
 #   sync              publish your commits to the agents (they run: git fetch upstream)
 # options (up/agents/shell): --runtime runsc|crun  --mem 32G  --cpus N  --ro PATH  --offline  --no-update
 set -euo pipefail
@@ -29,26 +29,17 @@ if [[ $1 == down-all ]]; then
   for pod in $(podman pod ls --format '{{.Name}}' --filter name='^ab-'); do "$B/agentbox-down" "${pod#ab-}"; done
   exit 0
 fi
-if [[ $1 == list ]]; then
-  printf '%-28s %-8s %-9s %s\n' PROJECT CONFIG WORKTREE POD
-  for d in "$AB_PROJECTS"/*/; do
-    n=$(basename "$d")
-    c=-; [[ -f $AB_CONFIG/projects/$n.toml ]] && c=yes
-    w=-; [[ -d $AB_AGENTS/$n ]] && w=yes
-    s=-; podman pod exists "ab-$n" 2>/dev/null && s=$(podman pod inspect -f '{{.State}}' "ab-$n")
-    printf '%-28s %-8s %-9s %s\n' "$n" "$c" "$w" "$s"
-  done
-  exit 0
-fi
+if [[ $1 == list ]]; then shift; exec python3 "$AB_LIB/projects.py" list "$@"; fi
+if [[ $1 == __projects ]]; then exec python3 "$AB_LIB/projects.py" names; fi   # completion
 
 p=$1; shift
 action=default; [[ $# -gt 0 && $1 != -* ]] && { action=$1; shift; }
 target=""; [[ $action == shell && $# -gt 0 && $1 != -* ]] && { target=$1; shift; }
-[[ -d $AB_PROJECTS/$p ]] || ab_die "no such project: $AB_PROJECTS/$p"
+S=$(ab_project_path "$p") || exit 1
 
 upd=1; opts=()
 for o in "$@"; do [[ $o == --no-update ]] && upd=0 || opts+=("$o"); done
-S=$AB_PROJECTS/$p W=$AB_AGENTS/$p BR=$AB_STATE/bridge/$p.git
+W=$AB_AGENTS/$p BR=$AB_STATE/bridge/$p.git
 
 case $action in
   down)    exec "$B/agentbox-down" "$p" ;;

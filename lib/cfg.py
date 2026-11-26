@@ -6,7 +6,7 @@ Usage: cfg.py <project> [--runtime runsc|crun] [--mem 32G] [--cpus N]
 
 Order (later wins): package defaults.toml -> $AB_CONFIG/config.toml ->
 $AB_CONFIG/hosts/<hostname>.toml -> $AB_CONFIG/projects/<project>.toml ->
-hint file in ~/Projects/<p> (may only LOWER privileges) -> CLI options.
+hint file in the project's repo (may only LOWER privileges) -> CLI options.
 $AB_CONFIG defaults to ~/.config/agentbox (your config, separate from the package).
 
 Prints bash assignments on stdout (for `eval`). Warnings go to stderr.
@@ -23,6 +23,7 @@ AGENTS_DIR = os.environ.get("AB_AGENTS", f"{HOME}/.agents-projects")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import images as _images  # noqa: E402  (layer definitions: images/profiles.toml + yours)
+import projects as _projects  # noqa: E402  (project discovery under $AB_PROJECTS)
 
 
 def parse_ident(s, what):
@@ -90,7 +91,7 @@ def check_mount(path):
     for p in map(os.path.realpath, (HOME, "/")):
         if is_ancestor_or_same(real, p):  # $HOME itself, / , or a parent of $HOME
             die(f"refusing to mount {real}: too broad")
-    if real.startswith(os.path.realpath(PROJECTS) + "/"):
+    if is_ancestor_or_same(os.path.realpath(PROJECTS), real):  # every project lives under it
         warn(f"{real} is a working tree: uncommitted files and secrets (.env) there become readable")
     return real
 
@@ -108,6 +109,12 @@ def main():
     p = a.project
     if "/" in p or p.startswith(".") or not p:
         die(f"bad project name: {p!r}")
+
+    found = _projects.discover()
+    proj, err = _projects.lookup(p, found)
+    if err:
+        die(err)
+    src = proj.real       # resolved and checked by discovery: used for host reads
 
     host = socket.gethostname().split(".")[0]
     cfg = load(f"{ROOT}/defaults.toml") or die(f"{ROOT}/defaults.toml missing")
@@ -128,7 +135,7 @@ def main():
     hst = cfg.get("host", {})
 
     # Hint file in YOUR repo: may only lower privileges.
-    hint = load(f"{PROJECTS}/{p}/.agentbox-hint.toml") or {}
+    hint = load(f"{src}/.agentbox-hint.toml") or {}
     for k, v in hint.items():
         if k == "network" and v == "offline":
             net["mode"] = "offline"
@@ -185,8 +192,8 @@ def main():
     # Mounts (read-only only; writable extras are deliberately not offered).
     mounts, seen = [], set()
     for kind, paths in (("data", pr.get("data_ro", [])), ("ref", pr.get("ref_ro", []) + a.ro)):
-        for src in paths:
-            real = check_mount(src)
+        for path in paths:
+            real = check_mount(path)
             base = os.path.basename(real.rstrip("/")) or "root"
             dst, n = f"/{kind}/{base}", 2
             while dst in seen:
@@ -227,7 +234,7 @@ def main():
 
     out = dict(
         P=p, NORM=norm, POD=f"ab-{p}", SLICE=f"agents-{norm}.slice",
-        SRC=f"{PROJECTS}/{p}", WORK=f"{AGENTS_DIR}/{p}", BRIDGE=f"{STATE}/bridge/{p}.git",
+        SRC=src, WORK=f"{AGENTS_DIR}/{p}", BRIDGE=f"{STATE}/bridge/{p}.git",
         PROFILE=profile, IMAGE=IMAGES[profile], RT=runtime, DEVRT=dev_rt,
         NET=net["mode"], DEV=int(effective["dev"]), TEX_ROOT=tex,
         HOST_LABEL=hst.get("label", host), GPU=hst.get("gpu", "none"),
