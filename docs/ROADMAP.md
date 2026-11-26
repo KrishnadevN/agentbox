@@ -116,7 +116,32 @@ is read-only.
 
 Acceptance: `images.py plan` test with include + cycle; build of the example succeeds.
 
-### [ ] 6. `agentbox rename <old> <new>`
+### [ ] 6. Shared agent defaults
+
+With per-project config folders (item 1), settings made in one project (a status line,
+preferred options) do not reach the others.
+- Files in `~/.agents-context/agents/<agent>/` (e.g. `claude/statusline.sh`,
+  `claude/settings.json`, `codex/config.toml`) are copied into that agent's config folder
+  of a project when the file is missing there; existing files are never overwritten.
+  The folder is mounted read-only into that agent's container only, and the copy runs
+  inside the container (the config folder is agent-writable), like the Codex defaults
+  today.
+- Verify first how each CLI supports user-wide defaults (e.g. Codex
+  `/etc/codex/config.toml`, Claude Code managed settings, Antigravity, Copilot) and
+  prefer a native read-only layer where one exists and fits.
+- Logins are never copied: Claude Code and Codex rotate refresh tokens, so copies would
+  log each other out. Opt-in shared Claude login instead: if `auth/claude.env` exists
+  (`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), the claude container gets it with
+  `--env-file`, exactly like `copilot.env`; without it, `/login` per project keeps
+  working. README: the token lasts up to a year and is revoked in claude.ai settings.
+  Codex and Antigravity keep one login per project (no long-lived token for personal
+  plans).
+
+Acceptance: check suite — a default file appears in a new project; an existing file is
+kept unchanged; with `claude.env`, the token reaches only the claude container. README
+section.
+
+### [ ] 7. `agentbox rename <old> <new>`
 
 For renames like a placeholder → `JournalName2027`. The user renames the repo folder first;
 then this command moves `~/.agents-projects/<old>`, the bridge, `ctx/`, `home/`,
@@ -124,7 +149,7 @@ then this command moves `~/.agents-projects/<old>`, the bridge, `ctx/`, `home/`,
 trusted repo's `agent` remote. Refuses while the pod runs. Host-side moves of
 agent-writable folders: rename the top folder only (no traversal inside).
 
-### [ ] 7. Release 0.2.0
+### [ ] 8. Release 0.2.0
 
 README (layout, groups, env, include, rename), CHANGELOG, examples; beta tag, test on the
 laptop, then `v0.2.0`.
@@ -133,7 +158,7 @@ laptop, then `v0.2.0`.
 
 ## 0.3.0 — Agent workflow (medium)
 
-### [ ] 8. Documentation site and a shorter README
+### [ ] 9. Documentation site and a shorter README
 
 - Markdown sources in `docs/`, published to GitHub Pages by a GitHub Actions workflow.
   Choose a static site generator with few dependencies; verify that it is actively
@@ -155,12 +180,12 @@ laptop, then `v0.2.0`.
 Acceptance: the site builds in CI on every push and deploys from `main`; README links
 work; no content is lost in the move.
 
-### [ ] 9. Pass arguments to the agent
+### [ ] 10. Pass arguments to the agent
 
 `agentbox <p> claude -- --continue` → everything after `--` is appended to the agent
 command. Same for `codex`, `agy`, `copilot`.
 
-### [ ] 10. Handoff folder and review-workflow instructions
+### [ ] 11. Handoff folder and review-workflow instructions
 
 - Create `/work/.agentbox/handoff/` (inside the private project folder); mention it in the
   context template.
@@ -177,7 +202,7 @@ command. Same for `codex`, `agy`, `copilot`.
   - commit trailers in one final paragraph: `Implemented-by:`, `Reviewed-by:`,
     `Co-authored-by:`; agents report their own current model name.
 
-### [ ] 11. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
+### [ ] 12. Headless runs: `agentbox <p> run <agent> [--resume] "<prompt>"`
 
 - New config per agent: `headless` and `headless_resume` command lists.
   Defaults to verify: Claude `claude -p --dangerously-skip-permissions` (+ `--continue`);
@@ -186,18 +211,18 @@ command. Same for `codex`, `agy`, `copilot`.
 - Runs in the agent's own container (`podman exec` without TTY), output also appended to
   `/work/.agentbox/handoff/run-<agent>.log`.
 
-### [ ] 12. `agentbox <p> review [branch]`
+### [ ] 13. `agentbox <p> review [branch]`
 
 Fetch, then in the trusted repo: commit list and `diff --stat` of `agent/<branch>` against
 the default branch (detect `main`/`master`). Read-only; merging stays manual.
 
-### [ ] 13. Notifications
+### [ ] 14. Notifications
 
 Defaults written by prep into the sandbox login folders (only if not set): Claude terminal
 bell, Codex terminal notifications (verify setting names). README: kitty shows them; in
 tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets.
 
-### [ ] 14. `agentbox doctor` and `agentbox clean <p>`
+### [ ] 15. `agentbox doctor` and `agentbox clean <p>`
 
 - `doctor`: versions (agentbox, podman, runsc, CLIs), paths agentbox writes outside the
   package with sizes, stale slices/pods/state for projects that no longer exist, Podman
@@ -206,19 +231,19 @@ tmux set `monitor-bell on` and `allow-passthrough on`. No D-Bus, no host sockets
   `home/`, slice file (asks first; never touches `~/Projects`, never touches
   `~/.agents-context` without `--context`).
 
-### [ ] 15. Image name prefix for development
+### [ ] 16. Image name prefix for development
 
 `AB_IMAGE_PREFIX` (default `sbx`) used by `images.py`, `cfg.py`, `agentbox-update-tools`, so
 a development checkout can build and test `localhost/sbxdev-*` without replacing the images
 real projects use.
 
-### [ ] 16. Release 0.3.0
+### [ ] 17. Release 0.3.0
 
 ---
 
 ## 0.4.0 — Workstation and tmux (low)
 
-### [ ] 17. Fedora Atomic (Kinoite/Silverblue) support in prep
+### [ ] 18. Fedora Atomic (Kinoite/Silverblue) support in prep
 
 - Detect rpm-ostree; Podman is preinstalled; install missing pieces by layering only if
   needed; gVisor tarball into `/usr/local/bin` (writable on ostree).
@@ -226,32 +251,32 @@ real projects use.
   Verify how runsc handles labels; `setsebool -P container_use_devices=true` for GPU.
 - Check suite must pass on Kinoite.
 
-### [ ] 18. NVIDIA GPU tier
+### [ ] 19. NVIDIA GPU tier
 
 Host `gpu = "nvidia-cdi"`; project `gpu = "optional" | "required"`. With a GPU: `crun` +
 `--device nvidia.com/gpu=all` for the containers that need it (runsc + nvproxy stays an
 experiment). Optional `cuda` layer for `nvcc`. Check: `nvidia-smi` and
 `torch.cuda.is_available()` in the container; CPU fallback on hosts without GPU.
 
-### [ ] 19. tmux layout
+### [ ] 20. tmux layout
 
 `agentbox <p>` (no action) opens or re-attaches tmux session `ab-<p>`: window `host`
 (trusted repo folder, plain host shell), one window per agent, `dev`. `monitor-activity`
 on agent windows. Scripts never `send-keys` agent-written content.
 
-### [ ] 20. Release 0.4.0
+### [ ] 21. Release 0.4.0
 
 ---
 
 ## Later (lower)
 
-### [ ] 21. `agentbox <p> loop` — automated implement/review rounds
+### [ ] 22. `agentbox <p> loop` — automated implement/review rounds
 
-Host-side, after the protocol of item 10 has worked manually for a while. Reads `STATUS.md`
+Host-side, after the protocol of item 11 has worked manually for a while. Reads `STATUS.md`
 strictly (allowed values only, size cap), sends only fixed prompts via `run --resume`,
 stops at `approved-by-agents`, `needs-human` or the round limit.
 
-### [ ] 22. Per-agent worktrees (opt-in)
+### [ ] 23. Per-agent worktrees (opt-in)
 
 `worktrees = true`: each agent container gets its own git worktree/branch of the agent
 copy, created inside the sandbox so paths match. Only if parallel agents become common.
@@ -260,12 +285,12 @@ copy, created inside the sandbox so paths match. Only if parallel agents become 
 
 ## Even later
 
-### [ ] 23. Network allowlist and logging (opt-in)
+### [ ] 24. Network allowlist and logging (opt-in)
 
 A small egress proxy per pod: deny by default with a per-project domain list, and a log
 of allowed destinations. Breaks free web search unless domains are allowed.
 
-### [ ] 24. Nested containers (experiment, gVisor only)
+### [ ] 25. Nested containers (experiment, gVisor only)
 
 A layer with podman/buildah/fuse-overlayfs; capabilities only for that project's runsc
 containers (inside gVisor they apply to the user-space kernel, not the host); image storage
