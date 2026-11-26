@@ -122,7 +122,7 @@ is read-only.
 
 Acceptance: `images.py plan` test with include + cycle; build of the example succeeds.
 
-### [ ] 6. Shared agent defaults
+### [x] 6. Shared agent defaults
 
 With per-project config folders (item 1), settings made in one project (a status line,
 preferred options) do not reach the others.

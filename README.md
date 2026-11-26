@@ -184,9 +184,22 @@ You log in once per agent and project. Each agent's config folder (login, settin
 plugins, conversations) lives in its home for that project,
 `~/.local/share/agentbox/home/<project>/<agent>/`. It is kept between runs and never
 shared with another project, so an agent in one project cannot read another project's
-conversations, and `/resume` lists only this project's. Only the Copilot token is shared.
+conversations, and `/resume` lists only this project's. Only the Copilot token (and the
+optional Claude token below) is shared.
 
 - **Claude Code:** start it, type `/login`, open the link on your machine, paste the code.
+  To log in once for all projects instead, create a long-lived token with
+  `claude setup-token` (on any machine with Claude Code) and save it, readable only by
+  you and without the token in your shell history (bash; paste it at the prompt):
+  ```
+  (umask 077; read -rsp 'Token: ' t && echo && [ -n "$t" ] &&
+   printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$t" > ~/.local/share/agentbox/auth/claude.env)
+  ```
+  Only the claude containers receive it, and it takes precedence over a `/login` in a
+  project. It lasts up to a year; revoke it in your claude.ai settings. After adding,
+  replacing or removing the file, restart running projects (`agentbox <project>
+  restart`): until then they keep the old token, even a removed one. Codex and
+  Antigravity have no such token for personal plans; log in once per project.
 - **Codex:** turn on device-code login in your ChatGPT security settings. Then
   `agentbox <project> shell codex`, run `codex login --device-auth`, exit, and start
   `agentbox <project> codex`.
@@ -278,6 +291,21 @@ has a file with the same name, agentbox leaves the repository's file alone and t
 the agent can still read the private one in `/work/.agentbox/`. Agents can write there
 too (notes, plans, memory files), which makes it a good place for things that must not be
 published.
+
+**Shared agent defaults.** Settings you make in one project (a status line, preferred
+options) stay in that project's config folder. To give every project the same start,
+put files in `~/.agents-context/agents/<agent>/` (`claude`, `codex`, `agy`, `copilot`),
+laid out like the agent's config folder (`~/.claude`, `~/.codex`, `~/.gemini`,
+`~/.copilot`). On every launch, files that a project does not have yet are copied into
+it; files that exist are never replaced, so changes made in a project stay (delete the
+project's copy to get the default again). Each folder is visible, read-only, only to its
+own agent. For Codex, `codex/config.toml` is not copied but read as Codex's system
+config, below each project's own `config.toml`, so edits reach every project. Example:
+`examples/agents/claude/` (a status line). Never put login files there
+(`.credentials.json`, `auth.json`, Copilot's `config.json`, Antigravity's account
+files): copies of a login log each other out. Creating or removing an agent's folder
+needs a restart of running projects; adding files to an existing folder does not.
+This needs images built with agentbox 0.2 or later (`agentbox-build`).
 
 **Skills.** Put skills in `~/.agents-context/skills/<name>/SKILL.md`. Every agent sees
 them in its own personal skills folder (`~/.claude/skills`, `~/.agents/skills`, ...),

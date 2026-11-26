@@ -177,7 +177,7 @@ else
 fi
 
 ab_section "10. Agent context ($AB_CONTEXT)"
-run mkdir -p "$AB_CONTEXT/instructions" "$AB_CONTEXT/skills" "$AB_CONTEXT/projects"
+run mkdir -p "$AB_CONTEXT/instructions" "$AB_CONTEXT/skills" "$AB_CONTEXT/projects" "$AB_CONTEXT/agents"
 ab_ok "instructions/, skills/ and projects/ ready (make it a private git repo if you want to sync it)"
 
 ab_section "11. Shell integration and permissions"

@@ -44,7 +44,9 @@ CAT2=agentbox-selftest-cat-$RUNID     # the second project is nested: $AB_PROJEC
 POD2=ab-$P2 S2=$AB_PROJECTS/$CAT2/$P2 W2=$AB_AGENTS/$P2 SLICE2=agents-$(ab_norm "$P2").slice
 GI2=$AB_CONTEXT/groups/$CAT2 PI2=$AB_CONTEXT/project-instructions/$P2.md   # its folder + project instructions
 GC2=$AB_CONFIG/groups/$CAT2                                                # its folder config (env)
-MADE2=0 MADEL=0 MADEGD=0 MADEPD=0 MADECG=0
+DC=$AB_CONTEXT/agents/claude DX=$AB_CONTEXT/agents/codex CE=$AB_STATE/auth/claude.env  # shared defaults
+DSUB=$DC/ab-selftest-$RUNID                                                # claude defaults fixture
+MADE2=0 MADEL=0 MADEGD=0 MADEPD=0 MADECG=0 MADEAG=0 MADEDC=0 MADEDX=0 MADEXC=0 MADECE=0
 DATA=$HOME/agentbox-selftest-data SECRET=$HOME/.agentbox-selftest-secret
 cx() { local c=$1; shift; podman exec "$POD-$c" bash -c "$*"; }   # run in a container
 
@@ -116,6 +118,10 @@ cleanup() {
     ((MADEPD)) && rmdir "$AB_CONTEXT/project-instructions" 2>/dev/null
     rm -f "$GC2/group.toml"; rmdir "$GC2" 2>/dev/null
     ((MADECG)) && rmdir "$AB_CONFIG/groups" 2>/dev/null
+    rm -rf "$DSUB"; ((MADEXC)) && rm -f "$DX/config.toml"; ((MADECE)) && rm -f "$CE"
+    ((MADEDX)) && rmdir "$DX" 2>/dev/null
+    ((MADEDC)) && rmdir "$DC" 2>/dev/null
+    ((MADEAG)) && rmdir "$AB_CONTEXT/agents" 2>/dev/null
     rm -f "$HOME/.config/systemd/user/$SLICE2"
   fi
   ((MADEL)) && podman pod rm -f -t 2 "ab-$PL" >/dev/null 2>&1
@@ -179,17 +185,37 @@ fixture_free() {  # fixture_free <path>...  -> fails if any exists
 fixture_free "$AB_CONTEXT/groups" && MADEGD=1                 # parents: remove later only if new
 fixture_free "$AB_CONTEXT/project-instructions" && MADEPD=1
 fixture_free "$AB_CONFIG/groups" && MADECG=1
+# Shared defaults for project 2: claude files (fresh name), codex config.toml and a fake
+# claude.env only if absent. No symlinks on the way (they could redirect host writes).
+mk_defaults() {
+  local d
+  for d in "$AB_CONTEXT/agents" "$DC" "$DX" "$AB_STATE/auth"; do
+    [[ -L $d ]] && { fail "$d is a symlink; not writing shared-defaults fixtures"; return 1; }
+  done
+  fixture_free "$AB_CONTEXT/agents" && MADEAG=1
+  fixture_free "$DC" && MADEDC=1
+  fixture_free "$DX" && MADEDX=1
+  mkdir -p "$DSUB" "$DX" && echo default > "$DSUB/default.txt" && echo default > "$DSUB/keep.txt" || return 1
+  if fixture_free "$DX/config.toml"; then
+    MADEXC=1; echo "# ab-selftest-$RUNID" > "$DX/config.toml" || return 1
+  fi
+  if fixture_free "$CE"; then
+    MADECE=1; (umask 077; printf 'CLAUDE_CODE_OAUTH_TOKEN=ab-selftest-fake-%s\n' "$RUNID" > "$CE") || return 1
+  fi
+}
 if ! fixture_free "$AB_PROJECTS/$CAT2" "$W2" "$AB_STATE/home/$P2" "$AB_STATE/bridge/$P2.git" "$AB_STATE/ctx/$P2" \
-     "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" "$GI2" "$PI2" "$GC2" || podman pod exists "$POD2"; then
+     "$AB_CONTEXT/projects/$P2" "$HOME/.config/systemd/user/$SLICE2" "$GI2" "$PI2" "$GC2" "$DSUB" \
+   || podman pod exists "$POD2"; then
   fail "fixture $P2 already exists; not touching it"
 elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "selftest-folder-instr" > "$GI2/group.md" \
   && echo "selftest-project-instr" > "$PI2" \
   && mkdir -p "$GC2" && printf '[project]\nenv = { AB_SELFTEST = "env-%s" }\n' "$RUNID" > "$GC2/group.toml" \
   && cx dev "echo agents-$RUNID > /work/ab-ref-agents" && echo "project-$RUNID" > "$S/ab-ref-project" \
+  && mk_defaults \
   && mkdir -p "$S2" && git -C "$S2" init -q -b main && echo "# selftest2" > "$S2/README.md" \
   && git -C "$S2" add . && git -C "$S2" -c user.name=t -c user.email=t@t commit -qm init \
   && "$B/agentbox-new-worktree" "$P2" >/dev/null \
-  && "$B/agentbox-up" "$P2" "${UPOPTS[@]}" --ro "agents:$P" --ro "project:$P" >/dev/null; then
+  && UP2=("${UPOPTS[@]}" --ro "agents:$P" --ro "project:$P") && "$B/agentbox-up" "$P2" "${UP2[@]}" >/dev/null; then
   pass "second project (nested in a category folder) started"
   "$B/agentbox" list "$CAT2" 2>/dev/null | grep -q "^  $P2 " \
     && pass "agentbox list shows it under its category" || fail "agentbox list does not show $CAT2/$P2"
@@ -219,6 +245,40 @@ elif MADE2=1 && mkdir -p "$GI2" "$AB_CONTEXT/project-instructions" && echo "self
   expect "project:$P shows project 1's repository, read-only" podman exec "$POD2-claude" \
     bash -c "grep -qx project-$RUNID /ref/${P}_2/ab-ref-project && ! test -e /ref/${P}_2/ab-ref-agents \
       && ! touch /ref/${P}_2/.ab-x 2>/dev/null"
+  # Shared agent defaults: copied if missing, on every launch, never replacing a file.
+  dd=.claude/ab-selftest-$RUNID
+  expect "claude defaults copied into project 2" podman exec "$POD2-claude" \
+    bash -c "grep -qx default ~/$dd/default.txt && grep -qx default ~/$dd/keep.txt"
+  expect "defaults are read-only in claude" podman exec "$POD2-claude" \
+    bash -c "test -f /etc/agentbox/defaults/ab-selftest-$RUNID/keep.txt && ! touch /etc/agentbox/defaults/.ab-x 2>/dev/null"
+  for c in codex dev; do
+    expect "$c does not see claude's defaults" podman exec "$POD2-$c" \
+      bash -c "test -d /etc/agentbox/defaults && ! test -e /etc/agentbox/defaults/ab-selftest-$RUNID"
+  done
+  defaults_on_reuse() {
+    local id1 id2
+    id1=$(podman inspect -f '{{.Id}}' "$POD2-claude") || return 1
+    podman exec "$POD2-claude" bash -c "echo mine > ~/$dd/keep.txt" || return 1
+    echo new > "$DSUB/new.txt" || return 1
+    "$B/agentbox-up" "$P2" "${UP2[@]}" >/dev/null 2>&1 || return 1
+    id2=$(podman inspect -f '{{.Id}}' "$POD2-claude") || return 1
+    [[ $id1 == "$id2" ]] && podman exec "$POD2-claude" \
+      bash -c "grep -qx new ~/$dd/new.txt && grep -qx mine ~/$dd/keep.txt && grep -qx default ~/$dd/default.txt"
+  }
+  expect "new default arrives on the next launch (same container), project edit kept" defaults_on_reuse
+  if ((MADEXC)); then
+    expect "codex reads the shared config.toml as its system layer" podman exec "$POD2-codex" \
+      bash -c "grep -qx '# ab-selftest-$RUNID' /etc/codex/config.toml && ! grep -q ab-selftest ~/.codex/config.toml \
+        && grep -q 'cli_auth_credentials_store = \"file\"' ~/.codex/config.toml"
+  else
+    warnc "$DX/config.toml exists: codex system-layer check skipped"
+  fi
+  if [[ -f $CE ]]; then
+    expect "claude.env token reaches claude" podman exec "$POD2-claude" bash -c 'test -n "$CLAUDE_CODE_OAUTH_TOKEN"'
+    for c in codex dev; do
+      expect "claude.env token does not reach $c" podman exec "$POD2-$c" bash -c 'test -z "${CLAUDE_CODE_OAUTH_TOKEN:-}"'
+    done
+  fi
 else
   fail "second project failed to start"
 fi

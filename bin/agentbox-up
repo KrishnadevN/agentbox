@@ -191,6 +191,8 @@ start_ctr() {  # start_ctr <name> <runtime> [extra podman args...]
     rtargs+=(--cgroups=no-conmon)            # keep conmon (and runsc) in our scope
   fi
   context_mounts "$n"
+  local dm=() vd="DEFAULTS_$n"   # shared defaults: this agent's container only, never dev
+  [[ $n != dev && -n ${!vd:-} ]] && dm=(-v "${!vd}:/etc/agentbox/defaults:ro")
   local args=(
     --pod "$POD" --name "$name" --hostname "$n" --shm-size=8g
     --cap-drop=all --security-opt=no-new-privileges
@@ -203,7 +205,7 @@ start_ctr() {  # start_ctr <name> <runtime> [extra podman args...]
     -v "$AB_STATE/cache/uv:/home/agent/.cache/uv:rw"
     -v "$AB_STATE/cache/pnpm:/home/agent/.local/share/pnpm:rw"
     -v "$AB_STATE/cache/npm:/home/agent/.npm:rw"
-    "${XMOUNTS[@]}" "${CTXM[@]}"
+    "${XMOUNTS[@]}" "${CTXM[@]}" "${dm[@]}"
     "${ENV_ARGS[@]}"              # [project] env first: agentbox's own -e below win
     -e HOME=/home/agent -e PATH="$path" -e TZ="$tz"
     -e AGENTBOX=1 -e AGENTBOX_HOST="$HOST_LABEL" -e AGENTBOX_PROJECT="$P"
@@ -242,10 +244,13 @@ for ag in "${AGENTS[@]}"; do
 done
 for ag in "${AGENTS[@]}"; do
   case $ag in
-    claude) start_ctr claude "$RT" \
+    claude)
+      # Optional shared login (README): a long-lived token, for this container only.
+      tok=(); [[ -f $A/claude.env ]] && tok=(--env-file "$A/claude.env")
+      start_ctr claude "$RT" \
               -v "$C/claude.md:/home/agent/.claude/CLAUDE.md:ro" \
               -e CLAUDE_CONFIG_DIR=/home/agent/.claude -e DISABLE_AUTOUPDATER=1 \
-              -e IS_SANDBOX=1 ;;
+              -e IS_SANDBOX=1 "${tok[@]}" ;;
     codex)  start_ctr codex "$RT" \
               -v "$C/codex.md:/home/agent/.codex/AGENTS.md:ro" \
               -e CODEX_HOME=/home/agent/.codex
@@ -290,5 +295,21 @@ if ((CTX_FILES)) && [[ -n $(ls -A "$CTXP" 2>/dev/null) ]]; then
     ab_warn "private $n not linked: the repository already has $n (agents still see /work/.agentbox/$n)"
   done
 fi
+
+# ---- 6. shared agent defaults: copy missing files (INSIDE the sandbox) ------
+# Every launch, so defaults added later arrive without a restart; existing files are
+# never replaced. Codex reads config.toml as its system layer (/etc/codex) instead.
+declare -A cfgdir=([claude]=.claude [codex]=.codex [agy]=.gemini [copilot]=.copilot)
+for ag in "${AGENTS[@]}"; do
+  vd="DEFAULTS_$ag"; [[ -n ${!vd} ]] || continue
+  ab_scoped "$SLICE" "ab-$NORM-$ag-defaults" podman exec "$POD-$ag" sh -c '
+    cd /etc/agentbox/defaults || exit 1
+    for e in * .[!.]* ..?*; do
+      [ -e "$e" ] || [ -L "$e" ] || continue
+      [ "$1" = codex ] && [ "$e" = config.toml ] && continue
+      cp -R --update=none -- "$e" "$HOME/$2/" || exit 1
+    done' sh "$ag" "${cfgdir[$ag]}" \
+    || ab_warn "$ag: could not copy all shared defaults from ${!vd}"
+done
 
 podman ps --filter "pod=$POD" --format '  {{.Names}}\t{{.Status}}'

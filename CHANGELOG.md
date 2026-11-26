@@ -5,6 +5,12 @@ before 1.0, minor versions may change the configuration format.
 
 ## Unreleased
 
+- Shared agent defaults: files in `~/.agents-context/agents/<agent>/` are copied into
+  each project's agent config folder when missing (never replacing a file), e.g. a
+  Claude status line; `codex/config.toml` becomes Codex's system config. Optional shared
+  Claude login: a token from `claude setup-token` in
+  `~/.local/share/agentbox/auth/claude.env` reaches only the claude containers.
+  Rebuild images (`agentbox-build`) before using shared defaults.
 - `[project] env = { KEY = "value" }` sets environment variables in every container of
   a project (or of a folder, in a group file). `ref_ro`, `data_ro` and `--ro` accept
   `project:<name>` (your repository of another project) and `agents:<name>` (its agent

@@ -43,9 +43,9 @@ GLOBAL_RESOURCES = ("reserve_mem_gib_min", "reserve_mem_pct", "reserve_threads",
 PROTECTED = [f"{HOME}/{p}" for p in (
     ".ssh", ".gnupg", ".config", ".password-store", ".mozilla", ".pki",
     ".local/share/keyrings", ".netrc", ".git-credentials", ".docker",
-)] + [STATE, ROOT, CONFIG, CONTEXT]  # AGENTS_DIR too: its own check in check_mount()
+)] + [STATE, ROOT, CONFIG]  # AGENTS_DIR and CONTEXT too: their own checks in check_mount()
 # Set by agentbox itself (or by the launcher's --env-file, which --env would override).
-RESERVED_ENV = ("HOME", "PATH", "GIT_CONFIG_GLOBAL", "COPILOT_GITHUB_TOKEN")
+RESERVED_ENV = ("HOME", "PATH", "GIT_CONFIG_GLOBAL", "COPILOT_GITHUB_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
 
 
 def warn(msg):
@@ -101,6 +101,17 @@ def file_hash(path):
         return None
 
 
+def defaults_dir(agent):
+    """Shared defaults folder of an agent: its resolved path, or "" if there is none."""
+    path = f"{CONTEXT}/agents/{agent}"
+    if not os.path.lexists(path):
+        return ""
+    want = f"{os.path.realpath(CONTEXT)}/agents/{agent}"
+    if os.path.realpath(path) != want or not os.path.isdir(want):
+        die(f"{path} must be a folder (not a symlink, not inside a symlinked folder)")
+    return check_mount(want, agent_defaults=True)
+
+
 def gib(s):
     s = str(s).strip().upper().rstrip("B")
     mult = {"G": 1, "M": 1 / 1024, "T": 1024}.get(s[-1:], None)
@@ -124,9 +135,11 @@ def check_env(path, data):
             die(f"{path}: [project] env: {k} must be a string without NUL characters")
 
 
-def check_mount(path, agent_copy=False):
+def check_mount(path, agent_copy=False, agent_defaults=False):
     """agent_copy: path is a checked direct child of AGENTS_DIR (agents:<name>), the only
-    case where the AGENTS_DIR overlap is allowed; all other checks still apply."""
+    case where the AGENTS_DIR overlap is allowed; agent_defaults: path is a checked
+    folder <CONTEXT>/agents/<agent>, the only case where the CONTEXT overlap is allowed.
+    All other checks still apply."""
     real = os.path.realpath(os.path.expanduser(path))
     if not os.path.exists(real):
         die(f"mount source does not exist: {path}")
@@ -136,6 +149,10 @@ def check_mount(path, agent_copy=False):
     if is_ancestor_or_same(real, agents) or is_ancestor_or_same(agents, real):
         if not (agent_copy and os.path.dirname(real) == agents):
             die(f"refusing to mount {real}: overlaps the agent copies in {agents} (use agents:<name>)")
+    ctx = os.path.realpath(CONTEXT)
+    if is_ancestor_or_same(real, ctx) or is_ancestor_or_same(ctx, real):
+        if not (agent_defaults and os.path.dirname(real) == f"{ctx}/agents"):
+            die(f"refusing to mount {real}: overlaps protected path {ctx}")
     for p in map(os.path.realpath, PROTECTED):
         if is_ancestor_or_same(real, p) or is_ancestor_or_same(p, real):
             die(f"refusing to mount {real}: overlaps protected path {p}")
@@ -327,6 +344,13 @@ def main():
     # Contents, so an edited file also shows the restart notice.
     base = [f"{CONTEXT}/instructions/{n}.md" for n in ("all", "dev") + KNOWN_AGENTS]
     instr = {f: file_hash(f) for f in base + extra}
+    # Shared agent defaults: a new, removed or replaced folder needs a new mount, a new
+    # or changed claude.env a new container. Files inside the folder do not.
+    dflt = {ag: defaults_dir(ag) for ag in agents}
+    dflt_id = {}
+    for ag, d in dflt.items():
+        st = os.stat(d) if d else None
+        dflt_id[ag] = [d, st.st_dev, st.st_ino] if st else None
 
     norm = "".join(c if c.isalnum() or c == "_" else "_" for c in p)
     effective = dict(profile=profile, image=IMAGES[profile], runtime=runtime, dev_rt=dev_rt,
@@ -335,6 +359,7 @@ def main():
                      flags=rt["runsc_flags"], gpu=hst.get("gpu", "none"),
                      idents={a: cfg.get("agents", {}).get(a, {}).get("git") for a in KNOWN_AGENTS},
                      context=cfg.get("context", {}), instr=instr, env=env,
+                     defaults=dflt_id, claude_env=file_hash(f"{STATE}/auth/claude.env"),
                      skills={a: cfg.get("agents", {}).get(a, {}).get("skills") for a in KNOWN_AGENTS})
     cfghash = hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()[:12]
 
@@ -368,6 +393,7 @@ def main():
         arrays[f"SKILLS_{ag}"] = sk
         n, e = parse_ident(a_cfg.get("git", f"{ag} (agentbox) <{ag}@agentbox.invalid>"), f"[agents.{ag}] git")
         out[f"GITNAME_{ag}"], out[f"GITEMAIL_{ag}"] = n, e
+        out[f"DEFAULTS_{ag}"] = dflt.get(ag, "")
 
     for k, v in out.items():
         print(f"{k}={shlex.quote(str(v))}")

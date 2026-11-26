@@ -19,4 +19,8 @@ chmod 755 /usr/local/bin/magick
 
 ln -sf /usr/bin/fdfind /usr/local/bin/fd
 mkdir -p /work /upstream /data /ref /home/agent /etc/agentbox /opt/agentbox/tools
+# Shared agent defaults (~/.agents-context/agents/<agent>/) are mounted here; Codex reads
+# its system config through the link (dangling = no shared config).
+mkdir -p /etc/agentbox/defaults /etc/codex
+ln -sfn /etc/agentbox/defaults/config.toml /etc/codex/config.toml
 chmod 1777 /home/agent
